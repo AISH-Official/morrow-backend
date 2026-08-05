@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/morrow}
+    username: ${DB_USERNAME:morrow}
+    password: ${DB_PASSWORD:morrow}
+  jpa:
+    hibernate:
+      ddl-auto: update

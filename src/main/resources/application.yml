@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: morrow-api
+  datasource:
+    url: jdbc:h2:mem:morrow;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+server:
+  error:
+    include-message: always
