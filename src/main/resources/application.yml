@@ -17,3 +17,8 @@ management:
 server:
   error:
     include-message: always
+openai:
+  api:
+    key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o}
+  enabled: ${OPENAI_ENABLED:false}
