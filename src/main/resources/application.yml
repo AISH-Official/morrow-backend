@@ -4,12 +4,12 @@ spring:
   application:
     name: morrow-api
   datasource:
-    url: jdbc:h2:mem:morrow;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
+    url: ${DATABASE_URL:jdbc:h2:file:./data/morrow;MODE=PostgreSQL}
+    username: ${DATABASE_USERNAME:sa}
+    password: ${DATABASE_PASSWORD:}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${JPA_DDL_AUTO:update}
     open-in-view: false
 management:
   endpoints:

@@ -2,6 +2,7 @@ package app.morrow.checkin;
 
 import app.morrow.recommendation.Recommendation;
 import app.morrow.recommendation.RecommendationService;
+import app.morrow.personalization.PersonalizationService;
 import app.morrow.timeline.Timeline;
 import app.morrow.timeline.TimelineService;
 import org.springframework.stereotype.Service;
@@ -15,9 +16,10 @@ public class CheckInService {
  private final CheckInRepository repository;
  private final TimelineService timelineService;
  private final RecommendationService recommendationService;
+ private final PersonalizationService personalizationService;
 
- public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService){
-  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;
+ public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService){
+  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;
  }
 
  public CheckIn create(CreateCheckIn input){
@@ -27,7 +29,9 @@ public class CheckInService {
   var localTime=recordedAt.atZoneSameInstant(ZoneId.systemDefault()).toLocalTime();
   timelineService.create(new TimelineService.CreateTimeline(userId,localTime,"상태 체크인",timelineDetail(checkIn),Timeline.Kind.CHECKIN,true));
   var recommendation=recommendationFor(checkIn);
-  recommendationService.create(new RecommendationService.CreateRecommendation(userId,recommendation.title(),recommendation.rationale(),Recommendation.Status.ACTIVE));
+  var personalized=personalizationService.personalizeAction(userId,checkIn.getStatus(),recommendation.title(),recommendation.rationale());
+  recommendationService.create(new RecommendationService.CreateRecommendation(userId,personalized.title(),personalized.rationale(),Recommendation.Status.ACTIVE));
+  personalizationService.learnFromCheckIn(checkIn);
   return checkIn;
  }
 

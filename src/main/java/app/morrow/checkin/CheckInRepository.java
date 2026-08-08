@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 public interface CheckInRepository extends JpaRepository<CheckIn, UUID> {
  List<CheckIn> findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(String userId,OffsetDateTime after);
+ List<CheckIn> findByUserIdOrderByRecordedAtAsc(String userId);
  @Query("SELECT c.status, COUNT(c) FROM CheckIn c WHERE c.userId = :userId AND c.recordedAt > :after GROUP BY c.status ORDER BY COUNT(c) DESC")
  List<Object[]> countByStatusAfter(String userId,OffsetDateTime after);
  @Query("SELECT c.cause, COUNT(c) FROM CheckIn c WHERE c.userId = :userId AND c.recordedAt > :after AND c.cause IS NOT NULL GROUP BY c.cause ORDER BY COUNT(c) DESC")

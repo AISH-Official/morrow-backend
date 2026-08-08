@@ -5,6 +5,7 @@ import app.morrow.checkin.CheckInRepository;
 import app.morrow.checkin.CheckInService;
 import app.morrow.timeline.Timeline;
 import app.morrow.timeline.TimelineService;
+import app.morrow.personalization.PersonalizationService;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -19,9 +20,10 @@ public class DemoDataInitializer implements ApplicationRunner {
  private final CheckInRepository repository;
  private final CheckInService checkInService;
  private final TimelineService timelineService;
+ private final PersonalizationService personalizationService;
 
- public DemoDataInitializer(CheckInRepository repository,CheckInService checkInService,TimelineService timelineService){
-  this.repository=repository;this.checkInService=checkInService;this.timelineService=timelineService;
+ public DemoDataInitializer(CheckInRepository repository,CheckInService checkInService,TimelineService timelineService,PersonalizationService personalizationService){
+  this.repository=repository;this.checkInService=checkInService;this.timelineService=timelineService;this.personalizationService=personalizationService;
  }
 
  @Override public void run(ApplicationArguments args){
@@ -44,5 +46,6 @@ public class DemoDataInitializer implements ApplicationRunner {
   timelineService.create(new TimelineService.CreateTimeline(USER_ID,now.minusHours(9).toLocalTime(),"수면 회복이 평소보다 낮음","최근 7일 평균보다 1시간 12분 짧았어요.",Timeline.Kind.SLEEP,false));
   checkInService.create(new CheckInService.CreateCheckIn(USER_ID,CheckIn.Status.TIRED,CheckIn.Cause.SLEEP,"오후 집중력이 떨어짐",CheckIn.Source.WATCH,now.minusHours(3)));
   timelineService.create(new TimelineService.CreateTimeline(USER_ID,now.minusHours(1).toLocalTime(),"짧은 걷기로 회복","7분 걷기 후 상태가 조금 나아졌어요.",Timeline.Kind.RECOVERY,true));
+  personalizationService.rebuild(USER_ID);
  }
 }

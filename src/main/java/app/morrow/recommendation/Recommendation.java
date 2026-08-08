@@ -9,5 +9,6 @@ public class Recommendation {
  protected Recommendation(){}
  public Recommendation(String userId,String title,String rationale,Status status){this.id=UUID.randomUUID();this.userId=userId;this.title=title;this.rationale=rationale;this.status=status;this.createdAt=OffsetDateTime.now();}
  public UUID getId(){return id;} public String getUserId(){return userId;} public String getTitle(){return title;} public String getRationale(){return rationale;} public Status getStatus(){return status;} public OffsetDateTime getCreatedAt(){return createdAt;}
+ public void applyFeedback(boolean completed,boolean helpful){this.status=completed?Status.COMPLETED:(helpful?Status.ACTIVE:Status.DISMISSED);}
  public enum Status{ACTIVE,COMPLETED,DISMISSED}
 }

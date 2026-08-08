@@ -35,10 +35,10 @@ public class OpenAIClient {
         );
     }
 
-    public String generateResponse(String systemPrompt, String userContextPrompt, String userMessage) {
+    public GenerationResult generateResponse(String systemPrompt, String userContextPrompt, String userMessage) {
         if (!enabled || apiKey == null || apiKey.isBlank()) {
             log.warn("OpenAI assistant is using fallback mode because it is disabled or no API key is configured");
-            return generateFallbackResponse();
+            return new GenerationResult(null, Mode.FALLBACK);
         }
 
         try {
@@ -53,18 +53,18 @@ public class OpenAIClient {
                     .maxTokens(500)
                     .build();
             var completion = service.createChatCompletion(request);
-            return completion.getChoices().get(0).getMessage().getContent();
+            return new GenerationResult(completion.getChoices().get(0).getMessage().getContent(), Mode.LIVE);
         } catch (Exception error) {
             log.warn(
                     "OpenAI request failed; using fallback mode. type={}",
                     error.getClass().getSimpleName()
             );
-            return generateFallbackResponse();
+            return new GenerationResult(null, Mode.FALLBACK);
         }
     }
 
-    private String generateFallbackResponse() {
-        return "지금은 AI 연결을 사용할 수 없어 기본 안내로 답변하고 있어요. "
-                + "잠시 후 다시 시도하거나 오늘의 체크인과 추천을 확인해 주세요.";
-    }
+    public Status status() { return new Status(enabled, apiKey != null && !apiKey.isBlank(), model, enabled && apiKey != null && !apiKey.isBlank()); }
+    public enum Mode { LIVE, FALLBACK }
+    public record GenerationResult(String content, Mode mode) {}
+    public record Status(boolean enabled, boolean keyConfigured, String model, boolean ready) {}
 }

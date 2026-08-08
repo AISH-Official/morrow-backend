@@ -6,6 +6,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -13,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest @AutoConfigureMockMvc
 class DashboardControllerTest {
  @Autowired MockMvc mvc;
+ @Autowired ObjectMapper objectMapper;
 
  @Test void dashboardHasWellnessDataAndSafetyNotice()throws Exception{
   mvc.perform(get("/api/v1/dashboard"))
@@ -64,5 +66,52 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.safetyChecked").value(true))
    .andExpect(jsonPath("$.content").value(org.hamcrest.Matchers.containsString("109")))
    .andExpect(jsonPath("$.content").value(org.hamcrest.Matchers.containsString("119")));
+ }
+
+ @Test void feedbackBecomesLongTermMemoryAndChangesTheNextAction()throws Exception{
+  var userId="learning-user";
+  mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content("""
+   {"userId":"learning-user","status":"TIRED","cause":"SLEEP","note":"잠을 설침","source":"WEB"}
+   """)).andExpect(status().isCreated());
+
+  var dashboard=mvc.perform(get("/api/v1/dashboard").param("userId",userId)).andExpect(status().isOk()).andReturn();
+  var recommendationId=objectMapper.readTree(dashboard.getResponse().getContentAsString()).path("recommendation").path("id").asText();
+  mvc.perform(post("/api/v1/recommendations/{id}/feedback",recommendationId).contentType(MediaType.APPLICATION_JSON).content("""
+   {"completed":true,"helpful":false,"note":"걷기는 지금 부담스러웠음"}
+   """)).andExpect(status().isCreated());
+
+  mvc.perform(get("/api/v1/personalization/profile").param("userId",userId))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.personalized").value(true))
+   .andExpect(jsonPath("$.evidenceCount").value(2))
+   .andExpect(jsonPath("$.avoidStrategyCount").value(1));
+
+  mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content("""
+   {"userId":"learning-user","status":"TIRED","cause":"SLEEP","note":"오늘도 피곤함","source":"WEB"}
+   """)).andExpect(status().isCreated());
+  mvc.perform(get("/api/v1/dashboard").param("userId",userId))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.recommendation.title").value("물 한 잔을 마시고 5분 쉬어보세요"))
+   .andExpect(jsonPath("$.recommendation.rationale").value(org.hamcrest.Matchers.containsString("피드백")));
+
+  mvc.perform(post("/api/v1/assistant/messages").contentType(MediaType.APPLICATION_JSON).content("""
+   {"userId":"learning-user","content":"지금 뭘 하면 좋을까?"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.aiMode").value("FALLBACK"))
+   .andExpect(jsonPath("$.personalized").value(true))
+   .andExpect(jsonPath("$.personalizationEvidenceCount").value(3));
+ }
+
+ @Test void declaredMemoryIsUserControlledAndDeletedWithAllWellnessData()throws Exception{
+  var userId="memory-owner";
+  mvc.perform(post("/api/v1/personalization/memories").contentType(MediaType.APPLICATION_JSON).content("""
+   {"userId":"memory-owner","type":"PREFERENCE","summary":"강한 운동보다 짧은 산책을 선호함"}
+   """)).andExpect(status().isCreated()).andExpect(jsonPath("$.source").value("USER_DECLARED"));
+  mvc.perform(get("/api/v1/personalization/profile").param("userId",userId))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.activeMemoryCount").value(1));
+  mvc.perform(delete("/api/v1/users/me/data").param("userId",userId)).andExpect(status().isNoContent());
+  mvc.perform(get("/api/v1/personalization/profile").param("userId",userId))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.activeMemoryCount").value(0));
  }
 }
