@@ -5,4 +5,5 @@ import java.util.List;
 import java.util.UUID;
 public interface TimelineRepository extends JpaRepository<Timeline, UUID> {
  List<Timeline> findByUserIdAndCreatedAtAfterOrderByTimeAsc(String userId,OffsetDateTime after);
+ void deleteByUserId(String userId);
 }

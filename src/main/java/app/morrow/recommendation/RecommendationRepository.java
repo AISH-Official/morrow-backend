@@ -7,4 +7,6 @@ import java.util.UUID;
 public interface RecommendationRepository extends JpaRepository<Recommendation, UUID> {
  Optional<Recommendation> findFirstByUserIdAndStatusOrderByCreatedAtDesc(String userId,Recommendation.Status status);
  List<Recommendation> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(String userId,OffsetDateTime after);
+ List<Recommendation> findByUserId(String userId);
+ void deleteByUserId(String userId);
 }

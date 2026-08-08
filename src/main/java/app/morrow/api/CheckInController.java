@@ -12,8 +12,8 @@ import java.util.UUID;
 @RestController @RequestMapping("/api/v1/check-ins")
 public class CheckInController {
  private final CheckInService service; public CheckInController(CheckInService service){this.service=service;}
- @PostMapping ResponseEntity<CheckInResponse> create(@Valid @RequestBody CreateRequest request){var saved=service.create(new CheckInService.CreateCheckIn(request.status(),request.cause(),request.note(),request.source(),request.recordedAt()));return ResponseEntity.created(URI.create("/api/v1/check-ins/"+saved.getId())).body(CheckInResponse.from(saved));}
+ @PostMapping ResponseEntity<CheckInResponse> create(@Valid @RequestBody CreateRequest request){var saved=service.create(new CheckInService.CreateCheckIn(request.userId(),request.status(),request.cause(),request.note(),request.source(),request.recordedAt()));return ResponseEntity.created(URI.create("/api/v1/check-ins/"+saved.getId())).body(CheckInResponse.from(saved));}
  @DeleteMapping("/{id}") ResponseEntity<Void> delete(@PathVariable UUID id){service.delete(id);return ResponseEntity.noContent().build();}
- record CreateRequest(@NotNull CheckIn.Status status,CheckIn.Cause cause,@Size(max=500)String note,@NotNull CheckIn.Source source,OffsetDateTime recordedAt){}
- record CheckInResponse(UUID id,String status,String cause,String note,String source,OffsetDateTime recordedAt){static CheckInResponse from(CheckIn c){return new CheckInResponse(c.getId(),c.getStatus().name(),c.getCause()==null?null:c.getCause().name(),c.getNote(),c.getSource().name(),c.getRecordedAt());}}
+ record CreateRequest(@Size(max=100)String userId,@NotNull CheckIn.Status status,CheckIn.Cause cause,@Size(max=500)String note,@NotNull CheckIn.Source source,OffsetDateTime recordedAt){}
+ record CheckInResponse(UUID id,String userId,String status,String cause,String note,String source,OffsetDateTime recordedAt){static CheckInResponse from(CheckIn c){return new CheckInResponse(c.getId(),c.getUserId(),c.getStatus().name(),c.getCause()==null?null:c.getCause().name(),c.getNote(),c.getSource().name(),c.getRecordedAt());}}
 }
