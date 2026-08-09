@@ -2,6 +2,8 @@ package app.morrow.notification;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @Component
 @ConfigurationProperties(prefix = "morrow.push.apns")
@@ -21,6 +23,7 @@ public class ApnsProperties {
     public String getPrivateKeyPath() { return privateKeyPath; } public void setPrivateKeyPath(String privateKeyPath) { this.privateKeyPath = privateKeyPath; }
     public String getIosTopic() { return iosTopic; } public void setIosTopic(String iosTopic) { this.iosTopic = iosTopic; }
     public String getWatchTopic() { return watchTopic; } public void setWatchTopic(String watchTopic) { this.watchTopic = watchTopic; }
-    public boolean ready() { return enabled && !teamId.isBlank() && !keyId.isBlank() && (!privateKey.isBlank() || !privateKeyPath.isBlank()); }
+    public boolean ready() { return enabled && !teamId.isBlank() && !keyId.isBlank() && (!privateKey.isBlank() || readablePrivateKeyPath()); }
     public String topic(PushDevice.Platform platform) { return platform == PushDevice.Platform.WATCHOS ? watchTopic : iosTopic; }
+    private boolean readablePrivateKeyPath() { try { return !privateKeyPath.isBlank() && Files.isReadable(Path.of(privateKeyPath)); } catch (Exception ignored) { return false; } }
 }

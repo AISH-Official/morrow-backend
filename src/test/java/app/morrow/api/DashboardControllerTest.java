@@ -143,4 +143,49 @@ class DashboardControllerTest {
   mvc.perform(get("/api/v1/personalization/profile").param("userId",userId))
    .andExpect(status().isOk()).andExpect(jsonPath("$.activeMemoryCount").value(0));
  }
+
+ @Test void devicePairingSharesOneUserAndBearerPreventsCrossUserAccess()throws Exception{
+  var phone=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+   {"deviceId":"ios-test-device","deviceName":"Test iPhone","platform":"IOS"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(org.hamcrest.Matchers.startsWith("user-")))
+   .andReturn();
+  var phoneCredentials=objectMapper.readTree(phone.getResponse().getContentAsString());
+  var userId=phoneCredentials.path("userId").asText();
+  var pairingCode=phoneCredentials.path("pairingCode").asText();
+
+  var web=mvc.perform(post("/api/v1/auth/pair").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
+   "pairingCode",pairingCode,"deviceId","web-test-device","deviceName","Test Browser","platform","WEB"
+  ))))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(userId))
+   .andReturn();
+  var webToken=objectMapper.readTree(web.getResponse().getContentAsString()).path("accessToken").asText();
+
+  mvc.perform(get("/api/v1/dashboard").param("userId",userId).header("Authorization","Bearer "+webToken))
+   .andExpect(status().isOk());
+  mvc.perform(get("/api/v1/dashboard").param("userId","somebody-else").header("Authorization","Bearer "+webToken))
+   .andExpect(status().isForbidden());
+ }
+
+ @Test void authenticatedDeviceCanRegisterIosAndWatchPushTokens()throws Exception{
+  var device=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+   {"deviceId":"push-owner-device","deviceName":"Push Owner","platform":"IOS"}
+   """))
+   .andExpect(status().isCreated()).andReturn();
+  var credentials=objectMapper.readTree(device.getResponse().getContentAsString());
+  var userId=credentials.path("userId").asText();
+  var token=credentials.path("accessToken").asText();
+  var authorization="Bearer "+token;
+
+  mvc.perform(post("/api/v1/notifications/devices").header("Authorization",authorization).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
+   "userId",userId,"deviceToken","a".repeat(64),"platform","IOS","environment","SANDBOX"
+  )))).andExpect(status().isCreated()).andExpect(jsonPath("$.platform").value("IOS"));
+  mvc.perform(post("/api/v1/notifications/devices").header("Authorization",authorization).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
+   "userId",userId,"deviceToken","b".repeat(64),"platform","WATCHOS","environment","SANDBOX"
+  )))).andExpect(status().isCreated()).andExpect(jsonPath("$.platform").value("WATCHOS"));
+  mvc.perform(post("/api/v1/notifications/test").header("Authorization",authorization).param("userId",userId))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.attempted").value(2));
+ }
 }

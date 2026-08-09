@@ -63,6 +63,7 @@ public class HttpApnsGateway implements ApnsGateway {
     private ECPrivateKey loadKey() throws Exception {
         var pem = properties.getPrivateKey();
         if (pem.isBlank()) pem = Files.readString(Path.of(properties.getPrivateKeyPath()));
+        pem = pem.replace("\\n", "\n");
         var encoded = pem.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replaceAll("\\s", "");
         return (ECPrivateKey) KeyFactory.getInstance("EC").generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(encoded)));
     }
