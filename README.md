@@ -2,7 +2,7 @@
 
 Morrow의 Java 21·Spring Boot API 저장소입니다. 기기 인증, HealthKit 집계 동기화, 체크인·타임라인·추천, 설명 가능한 사용자별 개인화 메모리, AI 대화와 APNs 알림을 제공합니다.
 
-프론트엔드 클라이언트는 [AISH-Official/morrow-frontend](https://github.com/AISH-Official/morrow-frontend), 통합 문서와 전체 아키텍처는 [AISH-Official/morrow-wellness](https://github.com/AISH-Official/morrow-wellness)에서 관리합니다.
+프론트엔드 클라이언트는 [AISH-Official/morrow-frontend](https://github.com/AISH-Official/morrow-frontend), 통합 문서와 전체 아키텍처는 [AISH-Official/morrow-docs](https://github.com/AISH-Official/morrow-docs)에서 관리합니다.
 
 ## 빠른 실행
 
