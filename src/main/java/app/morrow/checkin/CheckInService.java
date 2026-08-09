@@ -24,8 +24,12 @@ public class CheckInService {
 
  public CheckIn create(CreateCheckIn input){
   var userId=input.userId()==null||input.userId().isBlank()?"default-user":input.userId();
+  if(input.clientEventId()!=null&&!input.clientEventId().isBlank()){
+   var existing=repository.findByUserIdAndClientEventId(userId,input.clientEventId());
+   if(existing.isPresent())return existing.get();
+  }
   var recordedAt=input.recordedAt()==null?OffsetDateTime.now():input.recordedAt();
-  var checkIn=repository.save(new CheckIn(userId,input.status(),input.cause(),input.note(),input.source(),recordedAt));
+  var checkIn=repository.save(new CheckIn(userId,input.clientEventId(),input.status(),input.cause(),input.note(),input.source(),recordedAt));
   var localTime=recordedAt.atZoneSameInstant(ZoneId.systemDefault()).toLocalTime();
   timelineService.create(new TimelineService.CreateTimeline(userId,localTime,"상태 체크인",timelineDetail(checkIn),Timeline.Kind.CHECKIN,true));
   var recommendation=recommendationFor(checkIn);
@@ -59,6 +63,8 @@ public class CheckInService {
  private String statusLabel(CheckIn.Status value){return switch(value){case OK->"괜찮음";case TENSE->"긴장";case TIRED->"피로";case LOW_FOCUS->"집중 저하";case UNCOMFORTABLE->"불편함";};}
  private String causeLabel(CheckIn.Cause value){return switch(value){case SLEEP->"수면";case WORK->"업무";case STUDY->"학업";case RELATIONSHIP->"관계";case PHYSICAL->"신체";case UNKNOWN->"복합 요인";};}
 
- public record CreateCheckIn(String userId,CheckIn.Status status,CheckIn.Cause cause,String note,CheckIn.Source source,OffsetDateTime recordedAt){}
+ public record CreateCheckIn(String userId,String clientEventId,CheckIn.Status status,CheckIn.Cause cause,String note,CheckIn.Source source,OffsetDateTime recordedAt){
+  public CreateCheckIn(String userId,CheckIn.Status status,CheckIn.Cause cause,String note,CheckIn.Source source,OffsetDateTime recordedAt){this(userId,null,status,cause,note,source,recordedAt);}
+ }
  private record SuggestedAction(String title,String rationale){}
 }

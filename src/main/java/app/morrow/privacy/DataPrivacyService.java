@@ -6,6 +6,8 @@ import app.morrow.recommendation.RecommendationFeedbackRepository;
 import app.morrow.recommendation.RecommendationRepository;
 import app.morrow.timeline.TimelineRepository;
 import app.morrow.personalization.UserMemoryRepository;
+import app.morrow.health.HealthSignalSnapshotRepository;
+import app.morrow.notification.PushDeviceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +19,11 @@ public class DataPrivacyService {
  private final RecommendationFeedbackRepository feedback;
  private final AssistantMessageRepository messages;
  private final UserMemoryRepository memories;
+ private final HealthSignalSnapshotRepository healthSnapshots;
+ private final PushDeviceRepository pushDevices;
 
- public DataPrivacyService(CheckInRepository checkIns,TimelineRepository timelines,RecommendationRepository recommendations,RecommendationFeedbackRepository feedback,AssistantMessageRepository messages,UserMemoryRepository memories){
-  this.checkIns=checkIns;this.timelines=timelines;this.recommendations=recommendations;this.feedback=feedback;this.messages=messages;this.memories=memories;
+ public DataPrivacyService(CheckInRepository checkIns,TimelineRepository timelines,RecommendationRepository recommendations,RecommendationFeedbackRepository feedback,AssistantMessageRepository messages,UserMemoryRepository memories,HealthSignalSnapshotRepository healthSnapshots,PushDeviceRepository pushDevices){
+  this.checkIns=checkIns;this.timelines=timelines;this.recommendations=recommendations;this.feedback=feedback;this.messages=messages;this.memories=memories;this.healthSnapshots=healthSnapshots;this.pushDevices=pushDevices;
  }
 
  public void deleteAllForUser(String userId){
@@ -30,5 +34,7 @@ public class DataPrivacyService {
   messages.deleteByUserId(userId);
   checkIns.deleteByUserId(userId);
   memories.deleteByUserId(userId);
+  healthSnapshots.deleteByUserId(userId);
+  pushDevices.deleteByUserId(userId);
  }
 }

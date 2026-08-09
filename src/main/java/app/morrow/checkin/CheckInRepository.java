@@ -4,7 +4,9 @@ import org.springframework.data.jpa.repository.Query;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 public interface CheckInRepository extends JpaRepository<CheckIn, UUID> {
+ Optional<CheckIn> findByUserIdAndClientEventId(String userId,String clientEventId);
  List<CheckIn> findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(String userId,OffsetDateTime after);
  List<CheckIn> findByUserIdOrderByRecordedAtAsc(String userId);
  @Query("SELECT c.status, COUNT(c) FROM CheckIn c WHERE c.userId = :userId AND c.recordedAt > :after GROUP BY c.status ORDER BY COUNT(c) DESC")

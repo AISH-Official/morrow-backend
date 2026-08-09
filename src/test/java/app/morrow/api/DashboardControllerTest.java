@@ -7,6 +7,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import app.morrow.health.HealthSignalSnapshotRepository;
+import app.morrow.checkin.CheckInRepository;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -15,6 +17,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DashboardControllerTest {
  @Autowired MockMvc mvc;
  @Autowired ObjectMapper objectMapper;
+ @Autowired HealthSignalSnapshotRepository healthSnapshots;
+ @Autowired CheckInRepository checkIns;
 
  @Test void dashboardHasWellnessDataAndSafetyNotice()throws Exception{
   mvc.perform(get("/api/v1/dashboard"))
@@ -24,6 +28,31 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.metrics").exists())
    .andExpect(jsonPath("$.timeline").isArray())
    .andExpect(jsonPath("$.disclaimer").value("의료 진단이 아닌 일상 웰니스 분석입니다."));
+ }
+
+ @Test void nativeHealthSummaryFeedsWebDashboardAndIsIdempotent()throws Exception{
+  var userId="native-health-user";
+  var payload="""
+   {"userId":"native-health-user","clientSnapshotId":"iphone-123","source":"IPHONE","sleepMinutes":392,"heartRate":78,"restingHeartRate":64,"hrv":52,"steps":8123,"activeEnergyKcal":356,"exerciseMinutes":31,"distanceMeters":5400,"flightsClimbed":8,"respiratoryRate":15.2,"oxygenSaturationPercent":98,"recordedAt":"2026-08-09T08:00:00+09:00"}
+   """;
+  mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
+  mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
+  mvc.perform(get("/api/v1/dashboard").param("userId",userId))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.metrics.sleepMinutes").value(392))
+   .andExpect(jsonPath("$.metrics.steps").value(8123))
+   .andExpect(jsonPath("$.metrics.activeEnergyKcal").value(356))
+   .andExpect(jsonPath("$.metrics.exerciseMinutes").value(31));
+  org.junit.jupiter.api.Assertions.assertEquals(1,healthSnapshots.count());
+ }
+
+ @Test void nativeCheckInRetryDoesNotLearnTwice()throws Exception{
+  var payload="""
+   {"userId":"native-checkin-user","clientEventId":"watch-event-1","status":"TIRED","cause":"SLEEP","note":"","source":"WATCH"}
+   """;
+  mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
+  mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
+  org.junit.jupiter.api.Assertions.assertEquals(1,checkIns.findByUserIdOrderByRecordedAtAsc("native-checkin-user").size());
  }
 
  @Test void checkInCreatesExplainableTimelineAndRecommendation()throws Exception{

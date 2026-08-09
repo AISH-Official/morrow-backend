@@ -1,6 +1,7 @@
 package app.morrow.api;
 import app.morrow.assistant.AssistantMessage;
 import app.morrow.assistant.AssistantService;
+import app.morrow.auth.RequestUserResolver;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -11,9 +12,9 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 @RestController @RequestMapping("/api/v1/assistant")
 public class AssistantController {
- private final AssistantService service; public AssistantController(AssistantService service){this.service=service;}
- @PostMapping("/messages") ResponseEntity<MessageResponse> sendMessage(@Valid @RequestBody MessageRequest request){var response=service.sendMessage(request.userId(),request.content());return ResponseEntity.created(URI.create("/api/v1/assistant/messages/"+response.message().getId())).body(MessageResponse.from(response));}
- @GetMapping("/messages") java.util.List<MessageResponse> history(@RequestParam(defaultValue="default-user")String userId,@RequestParam(required=false)OffsetDateTime after){var since=after==null?OffsetDateTime.now().minusDays(7):after;return service.getHistory(userId,since).stream().map(MessageResponse::fromHistory).toList();}
+ private final AssistantService service; private final RequestUserResolver users; public AssistantController(AssistantService service,RequestUserResolver users){this.service=service;this.users=users;}
+ @PostMapping("/messages") ResponseEntity<MessageResponse> sendMessage(@Valid @RequestBody MessageRequest request){var response=service.sendMessage(users.resolve(request.userId()),request.content());return ResponseEntity.created(URI.create("/api/v1/assistant/messages/"+response.message().getId())).body(MessageResponse.from(response));}
+ @GetMapping("/messages") java.util.List<MessageResponse> history(@RequestParam(defaultValue="default-user")String userId,@RequestParam(required=false)OffsetDateTime after){var since=after==null?OffsetDateTime.now().minusDays(7):after;return service.getHistory(users.resolve(userId),since).stream().map(MessageResponse::fromHistory).toList();}
  @GetMapping("/status") StatusResponse status(){var value=service.status();return new StatusResponse(value.enabled(),value.keyConfigured(),value.model(),value.ready());}
  record MessageRequest(@NotBlank String userId,@NotBlank @Size(max=2000)String content){}
  record MessageResponse(UUID id,String userId,String role,String content,boolean safetyChecked,OffsetDateTime createdAt,String aiMode,int personalizationEvidenceCount,boolean personalized){static MessageResponse from(AssistantService.AssistantReply r){var m=r.message();return new MessageResponse(m.getId(),m.getUserId(),m.getRole().name(),m.getContent(),m.isSafetyChecked(),m.getCreatedAt(),r.mode().name(),r.personalizationEvidenceCount(),r.personalized());}static MessageResponse fromHistory(AssistantMessage m){return new MessageResponse(m.getId(),m.getUserId(),m.getRole().name(),m.getContent(),m.isSafetyChecked(),m.getCreatedAt(),"STORED",0,false);}}

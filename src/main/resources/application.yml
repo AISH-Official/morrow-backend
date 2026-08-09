@@ -25,5 +25,16 @@ openai:
   model: ${OPENAI_MODEL:gpt-4o}
   enabled: ${OPENAI_ENABLED:false}
 morrow:
+  auth:
+    required: ${MORROW_AUTH_REQUIRED:false}
+  push:
+    apns:
+      enabled: ${APNS_ENABLED:false}
+      team-id: ${APNS_TEAM_ID:}
+      key-id: ${APNS_KEY_ID:}
+      private-key: ${APNS_PRIVATE_KEY:}
+      private-key-path: ${APNS_PRIVATE_KEY_PATH:}
+      ios-topic: ${APNS_IOS_TOPIC:com.qlsl1198.morrowwellness}
+      watch-topic: ${APNS_WATCH_TOPIC:com.qlsl1198.morrowwellness.watchkitapp}
   demo:
     seed: ${MORROW_DEMO_SEED:true}

@@ -2,6 +2,7 @@ package app.morrow.api;
 
 import app.morrow.personalization.PersonalizationService;
 import app.morrow.personalization.UserMemory;
+import app.morrow.auth.RequestUserResolver;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -17,17 +18,18 @@ import java.util.UUID;
 @RestController @RequestMapping("/api/v1/personalization")
 public class PersonalizationController {
     private final PersonalizationService service;
-    public PersonalizationController(PersonalizationService service) { this.service = service; }
+    private final RequestUserResolver users;
+    public PersonalizationController(PersonalizationService service, RequestUserResolver users) { this.service = service; this.users = users; }
 
-    @GetMapping("/profile") ProfileResponse profile(@RequestParam(defaultValue = "default-user") String userId) { return ProfileResponse.from(service.profile(userId)); }
-    @GetMapping("/memories") List<MemoryResponse> memories(@RequestParam(defaultValue = "default-user") String userId) { return service.activeMemories(userId).stream().map(MemoryResponse::from).toList(); }
+    @GetMapping("/profile") ProfileResponse profile(@RequestParam(defaultValue = "default-user") String userId) { return ProfileResponse.from(service.profile(users.resolve(userId))); }
+    @GetMapping("/memories") List<MemoryResponse> memories(@RequestParam(defaultValue = "default-user") String userId) { return service.activeMemories(users.resolve(userId)).stream().map(MemoryResponse::from).toList(); }
     @PostMapping("/memories") ResponseEntity<MemoryResponse> create(@Valid @RequestBody CreateMemoryRequest request) {
-        var saved = service.createDeclaredMemory(request.userId(), request.type(), request.summary());
+        var saved = service.createDeclaredMemory(users.resolve(request.userId()), request.type(), request.summary());
         return ResponseEntity.created(URI.create("/api/v1/personalization/memories/" + saved.getId())).body(MemoryResponse.from(saved));
     }
-    @PatchMapping("/memories/{id}") MemoryResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateMemoryRequest request) { return MemoryResponse.from(service.updateMemory(id, request.userId(), request.summary(), request.active())); }
-    @DeleteMapping("/memories/{id}") ResponseEntity<Void> delete(@PathVariable UUID id, @RequestParam(defaultValue = "default-user") String userId) { service.deleteMemory(id, userId); return ResponseEntity.noContent().build(); }
-    @PostMapping("/rebuild") ProfileResponse rebuild(@RequestParam(defaultValue = "default-user") String userId) { return ProfileResponse.from(service.rebuild(userId)); }
+    @PatchMapping("/memories/{id}") MemoryResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateMemoryRequest request) { return MemoryResponse.from(service.updateMemory(id, users.resolve(request.userId()), request.summary(), request.active())); }
+    @DeleteMapping("/memories/{id}") ResponseEntity<Void> delete(@PathVariable UUID id, @RequestParam(defaultValue = "default-user") String userId) { service.deleteMemory(id, users.resolve(userId)); return ResponseEntity.noContent().build(); }
+    @PostMapping("/rebuild") ProfileResponse rebuild(@RequestParam(defaultValue = "default-user") String userId) { return ProfileResponse.from(service.rebuild(users.resolve(userId))); }
 
     @ExceptionHandler({PersonalizationService.MemoryNotFoundException.class, IllegalArgumentException.class})
     ResponseEntity<ErrorResponse> handle(RuntimeException error) { return ResponseEntity.badRequest().body(new ErrorResponse(error.getMessage())); }
