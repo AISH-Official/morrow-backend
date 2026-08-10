@@ -25,6 +25,8 @@ openai:
   model: ${OPENAI_MODEL:gpt-4o}
   enabled: ${OPENAI_ENABLED:false}
 morrow:
+  assistant:
+    time-zone: ${MORROW_TIME_ZONE:Asia/Seoul}
   auth:
     required: ${MORROW_AUTH_REQUIRED:false}
   push:

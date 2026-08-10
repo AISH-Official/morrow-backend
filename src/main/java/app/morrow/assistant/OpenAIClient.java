@@ -49,11 +49,15 @@ public class OpenAIClient {
             var request = ChatCompletionRequest.builder()
                     .model(model)
                     .messages(messages)
-                    .temperature(0.7)
-                    .maxTokens(500)
+                    .temperature(0.35)
+                    .maxTokens(900)
                     .build();
             var completion = service.createChatCompletion(request);
-            return new GenerationResult(completion.getChoices().get(0).getMessage().getContent(), Mode.LIVE);
+            var content = normalizeContent(completion.getChoices().get(0).getMessage().getContent());
+            if (content == null || content.isBlank()) {
+                return new GenerationResult(null, Mode.FALLBACK);
+            }
+            return new GenerationResult(content, Mode.LIVE);
         } catch (Exception error) {
             log.warn(
                     "OpenAI request failed; using fallback mode. type={}",
@@ -61,6 +65,26 @@ public class OpenAIClient {
             );
             return new GenerationResult(null, Mode.FALLBACK);
         }
+    }
+
+    static String normalizeContent(String content) {
+        if (content == null) {
+            return null;
+        }
+
+        var normalized = content.strip();
+        for (int attempt = 0; attempt < 2 && normalized.length() >= 2; attempt++) {
+            var first = normalized.charAt(0);
+            var last = normalized.charAt(normalized.length() - 1);
+            var wrapped = (first == '"' && last == '"')
+                    || (first == '“' && last == '”')
+                    || (first == '‘' && last == '’');
+            if (!wrapped) {
+                break;
+            }
+            normalized = normalized.substring(1, normalized.length() - 1).strip();
+        }
+        return normalized;
     }
 
     public Status status() { return new Status(enabled, apiKey != null && !apiKey.isBlank(), model, enabled && apiKey != null && !apiKey.isBlank()); }

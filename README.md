@@ -223,6 +223,7 @@ mvn spring-boot:run
 | `OPENAI_ENABLED` | `false` | OpenAI 실시간 응답 활성화 |
 | `OPENAI_API_KEY` | 빈 값 | OpenAI API 키 |
 | `OPENAI_MODEL` | `gpt-4o` | 사용할 모델 |
+| `MORROW_TIME_ZONE` | `Asia/Seoul` | 날짜·시간 질문과 상대 날짜 계산의 기준 시간대 |
 | `APNS_ENABLED` | `false` | APNs 실제 전송 활성화 |
 | `APNS_TEAM_ID`, `APNS_KEY_ID` | 빈 값 | Apple token authentication 식별자 |
 | `APNS_PRIVATE_KEY`, `APNS_PRIVATE_KEY_PATH` | 빈 값 | APNs `.p8` 키 본문 또는 절대 경로 |
