@@ -3,6 +3,7 @@ package app.morrow.api;
 import app.morrow.auth.DeviceAuthService;
 import app.morrow.auth.DeviceSession;
 import app.morrow.auth.DemoLoginService;
+import app.morrow.notification.PushNotificationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -15,7 +16,12 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
     private final DeviceAuthService service;
     private final DemoLoginService demoLogin;
-    public AuthController(DeviceAuthService service, DemoLoginService demoLogin) { this.service = service; this.demoLogin = demoLogin; }
+    private final PushNotificationService notifications;
+    public AuthController(DeviceAuthService service, DemoLoginService demoLogin, PushNotificationService notifications) {
+        this.service = service;
+        this.demoLogin = demoLogin;
+        this.notifications = notifications;
+    }
 
     @PostMapping("/device") @ResponseStatus(HttpStatus.CREATED)
     CredentialsResponse register(@Valid @RequestBody RegisterRequest request) {
@@ -34,11 +40,25 @@ public class AuthController {
         ));
     }
 
+    @PostMapping("/logout") @ResponseStatus(HttpStatus.NO_CONTENT)
+    void logout(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        var session = service.logout(bearerToken(authorization));
+        if (session != null && session.platform() != DeviceSession.Platform.WEB) {
+            notifications.unregisterAll(session.userId());
+        }
+    }
+
     @ExceptionHandler(DeviceAuthService.InvalidPairingCodeException.class) @ResponseStatus(HttpStatus.NOT_FOUND)
     ErrorResponse invalidCode(DeviceAuthService.InvalidPairingCodeException error) { return new ErrorResponse(error.getMessage()); }
 
     @ExceptionHandler(DemoLoginService.InvalidCredentialsException.class) @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ErrorResponse invalidCredentials(DemoLoginService.InvalidCredentialsException error) { return new ErrorResponse(error.getMessage()); }
+
+    private String bearerToken(String authorization) {
+        return authorization != null && authorization.startsWith("Bearer ")
+                ? authorization.substring(7).trim()
+                : null;
+    }
 
     record RegisterRequest(@NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform, @Size(max=100) String userId) {}
     record PairRequest(@NotBlank @Size(max=8) String pairingCode, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}

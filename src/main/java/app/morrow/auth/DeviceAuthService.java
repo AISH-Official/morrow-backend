@@ -46,6 +46,15 @@ public class DeviceAuthService {
         return repository.findByTokenHash(hash(rawToken)).map(DeviceSession::getUserId).orElse(null);
     }
 
+    public LoggedOutSession logout(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) return null;
+        var session = repository.findByTokenHash(hash(rawToken)).orElse(null);
+        if (session == null) return null;
+        var result = new LoggedOutSession(session.getUserId(), session.getPlatform());
+        repository.delete(session);
+        return result;
+    }
+
     public Credentials refreshPairingCode(String userId, String deviceId) {
         var session = repository.findByDeviceId(deviceId)
                 .filter(value -> value.getUserId().equals(userId))
@@ -101,5 +110,6 @@ public class DeviceAuthService {
     }
 
     public record Credentials(String userId, String accessToken, String pairingCode, String deviceId, DeviceSession.Platform platform) {}
+    public record LoggedOutSession(String userId, DeviceSession.Platform platform) {}
     public static class InvalidPairingCodeException extends RuntimeException { public InvalidPairingCodeException(String message) { super(message); } }
 }

@@ -203,6 +203,25 @@ class DashboardControllerTest {
    .andExpect(status().isForbidden());
  }
 
+ @Test void logoutRevokesTheCurrentDeviceToken()throws Exception{
+  var device=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+    {"deviceId":"logout-device","deviceName":"Logout test","platform":"WEB"}
+    """))
+   .andExpect(status().isCreated()).andReturn();
+  var credentials=objectMapper.readTree(device.getResponse().getContentAsString());
+  var userId=credentials.path("userId").asText();
+  var authorization="Bearer "+credentials.path("accessToken").asText();
+
+  mvc.perform(get("/api/v1/dashboard").param("userId",userId).header("Authorization",authorization))
+   .andExpect(status().isOk());
+  mvc.perform(post("/api/v1/auth/logout").header("Authorization",authorization))
+   .andExpect(status().isNoContent());
+  mvc.perform(get("/api/v1/dashboard").param("userId",userId).header("Authorization",authorization))
+   .andExpect(status().isUnauthorized());
+  mvc.perform(post("/api/v1/auth/logout").header("Authorization",authorization))
+   .andExpect(status().isNoContent());
+ }
+
  @Test void authenticatedDeviceCanRegisterIosAndWatchPushTokens()throws Exception{
   var device=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
    {"deviceId":"push-owner-device","deviceName":"Push Owner","platform":"IOS"}

@@ -101,6 +101,10 @@ POST /auth/pair
   → iPhone의 pairing code로 Watch 또는 Web 연결
   → 모든 기기가 같은 userId 사용
 
+POST /auth/logout
+  → 현재 기기의 device session 삭제
+  → 발급했던 Bearer token 즉시 무효화
+
 Authorization: Bearer <device-token>
   → DeviceAuthFilter 인증
   → RequestUserResolver가 다른 userId 접근 차단
@@ -191,6 +195,7 @@ Watch / iPhone / Web 체크인
 | `POST` | `/assistant/proactive-insight` | 최근 건강·체크인 흐름 기반 AI 알림 필요 여부와 문구 생성 |
 | `GET` | `/assistant/status` | OpenAI 활성·키·모델 준비 상태 확인 |
 | `POST` | `/auth/login` | 해커톤 데모 계정 로그인 후 기기 Bearer 세션 발급 |
+| `POST` | `/auth/logout` | 현재 기기 세션 삭제와 Bearer 토큰 폐기 |
 | `POST/DELETE` | `/notifications/devices` | APNs 기기 토큰 등록·비활성화 |
 | `POST` | `/notifications/test` | 사용자 기기로 테스트 알림 전송 |
 | `GET` | `/notifications/status` | APNs 설정과 활성 기기 상태 조회 |

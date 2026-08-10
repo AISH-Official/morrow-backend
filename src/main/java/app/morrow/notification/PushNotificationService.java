@@ -24,6 +24,10 @@ public class PushNotificationService {
 
     public void unregister(String userId, String token) { repository.findByDeviceToken(token.toLowerCase()).filter(value -> value.getUserId().equals(userId)).ifPresent(PushDevice::deactivate); }
 
+    public void unregisterAll(String userId) {
+        repository.findByUserIdAndActiveTrue(userId).forEach(PushDevice::deactivate);
+    }
+
     public DispatchResult send(String userId, String title, String body, String category, Map<String, Object> data, boolean respectCooldown) {
         var results = new ArrayList<DeviceResult>(); var now = OffsetDateTime.now();
         for (var device : repository.findByUserIdAndActiveTrue(userId)) {
