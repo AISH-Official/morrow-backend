@@ -11,6 +11,7 @@ import app.morrow.recommendation.RecommendationFeedbackRepository;
 import app.morrow.recommendation.RecommendationRepository;
 import app.morrow.timeline.Timeline;
 import app.morrow.timeline.TimelineRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -26,6 +27,7 @@ public class UserContextCollector {
     private final RecommendationFeedbackRepository feedbackRepository;
     private final AssistantMessageRepository messageRepository;
     private final PersonalizationService personalizationService;
+    private final boolean includeHealthData;
 
     public UserContextCollector(
             HealthSignalSnapshotRepository healthSnapshotRepository,
@@ -34,7 +36,8 @@ public class UserContextCollector {
             RecommendationRepository recommendationRepository,
             RecommendationFeedbackRepository feedbackRepository,
             AssistantMessageRepository messageRepository,
-            PersonalizationService personalizationService
+            PersonalizationService personalizationService,
+            @Value("${morrow.assistant.include-health-data:false}") boolean includeHealthData
     ) {
         this.healthSnapshotRepository = healthSnapshotRepository;
         this.checkInRepository = checkInRepository;
@@ -43,11 +46,14 @@ public class UserContextCollector {
         this.feedbackRepository = feedbackRepository;
         this.messageRepository = messageRepository;
         this.personalizationService = personalizationService;
+        this.includeHealthData = includeHealthData;
     }
 
     public UserContext collectContext(String userId) {
         var weekAgo = OffsetDateTime.now().minusDays(7);
-        var recentHealthSnapshots = healthSnapshotRepository.findTop12ByUserIdOrderByRecordedAtDesc(userId);
+        var recentHealthSnapshots = includeHealthData
+                ? healthSnapshotRepository.findTop12ByUserIdOrderByRecordedAtDesc(userId)
+                : List.<HealthSignalSnapshot>of();
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);
         var recentTimelines = timelineRepository.findByUserIdAndCreatedAtAfterOrderByTimeAsc(userId, weekAgo);
         var recentRecommendations = recommendationRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, weekAgo);

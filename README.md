@@ -224,6 +224,7 @@ mvn spring-boot:run
 | `OPENAI_API_KEY` | 빈 값 | OpenAI API 키 |
 | `OPENAI_MODEL` | `gpt-4o` | 사용할 모델 |
 | `MORROW_TIME_ZONE` | `Asia/Seoul` | 날짜·시간 질문과 상대 날짜 계산의 기준 시간대 |
+| `MORROW_AI_INCLUDE_HEALTH_DATA` | `false` | 명시적 동의 후 Watch/iPhone 건강 데이터를 AI 컨텍스트에 포함 |
 | `APNS_ENABLED` | `false` | APNs 실제 전송 활성화 |
 | `APNS_TEAM_ID`, `APNS_KEY_ID` | 빈 값 | Apple token authentication 식별자 |
 | `APNS_PRIVATE_KEY`, `APNS_PRIVATE_KEY_PATH` | 빈 값 | APNs `.p8` 키 본문 또는 절대 경로 |

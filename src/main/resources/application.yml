@@ -27,6 +27,7 @@ openai:
 morrow:
   assistant:
     time-zone: ${MORROW_TIME_ZONE:Asia/Seoul}
+    include-health-data: ${MORROW_AI_INCLUDE_HEALTH_DATA:false}
   auth:
     required: ${MORROW_AUTH_REQUIRED:false}
   push:
