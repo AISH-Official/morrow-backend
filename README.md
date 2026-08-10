@@ -243,6 +243,18 @@ mvn spring-boot:run
 
 `postgres` 프로필을 사용할 때는 `application-postgres.yml`의 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`를 설정합니다.
 
+## EC2 자동 배포
+
+`main` 브랜치에 변경이 반영되면 `.github/workflows/ci.yml`이 다음 순서로 운영 서버를 배포합니다.
+
+1. Java 21 환경에서 Maven 테스트 실행
+2. 실행 가능한 Spring Boot jar 빌드
+3. GitHub Actions 전용 SSH 키로 EC2에 릴리스 업로드
+4. `current.jar` 심볼릭 링크를 새 릴리스로 교체하고 `morrow-api` 재시작
+5. `/actuator/health`가 `UP`인지 확인하고, 실패하면 직전 릴리스로 롤백
+
+저장소 Actions secrets에는 `EC2_HOST`, `EC2_SSH_KEY_B64`, `EC2_KNOWN_HOSTS`가 필요합니다. 데이터베이스 비밀번호와 애플리케이션 환경 변수는 EC2의 `/etc/morrow.env`에만 보관하며 GitHub에는 복사하지 않습니다.
+
 ## 테스트와 CI
 
 ```bash
