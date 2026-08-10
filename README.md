@@ -188,7 +188,9 @@ Watch / iPhone / Web 체크인
 | `PATCH/DELETE` | `/personalization/memories/{id}` | 메모리 수정·삭제 |
 | `POST` | `/personalization/rebuild` | 기록으로 자동 학습 메모리 재구성 |
 | `POST/GET` | `/assistant/messages` | AI 대화 생성·이력 조회 |
+| `POST` | `/assistant/proactive-insight` | 최근 건강·체크인 흐름 기반 AI 알림 필요 여부와 문구 생성 |
 | `GET` | `/assistant/status` | OpenAI 활성·키·모델 준비 상태 확인 |
+| `POST` | `/auth/login` | 해커톤 데모 계정 로그인 후 기기 Bearer 세션 발급 |
 | `POST/DELETE` | `/notifications/devices` | APNs 기기 토큰 등록·비활성화 |
 | `POST` | `/notifications/test` | 사용자 기기로 테스트 알림 전송 |
 | `GET` | `/notifications/status` | APNs 설정과 활성 기기 상태 조회 |
@@ -225,6 +227,10 @@ mvn spring-boot:run
 | `OPENAI_MODEL` | `gpt-4o` | 사용할 모델 |
 | `MORROW_TIME_ZONE` | `Asia/Seoul` | 날짜·시간 질문과 상대 날짜 계산의 기준 시간대 |
 | `MORROW_AI_INCLUDE_HEALTH_DATA` | `false` | 명시적 동의 후 Watch/iPhone 건강 데이터를 AI 컨텍스트에 포함 |
+| `MORROW_DEMO_LOGIN_ENABLED` | `false` | 단일 해커톤 데모 로그인 활성화 |
+| `MORROW_DEMO_LOGIN_USERNAME` | 빈 값 | 데모 사용자 이름 |
+| `MORROW_DEMO_LOGIN_PASSWORD` | 빈 값 | Secret으로 주입할 데모 비밀번호 |
+| `MORROW_DEMO_LOGIN_USER_ID` | `hackathon-demo` | 데모 계정이 사용할 내부 사용자 ID |
 | `APNS_ENABLED` | `false` | APNs 실제 전송 활성화 |
 | `APNS_TEAM_ID`, `APNS_KEY_ID` | 빈 값 | Apple token authentication 식별자 |
 | `APNS_PRIVATE_KEY`, `APNS_PRIVATE_KEY_PATH` | 빈 값 | APNs `.p8` 키 본문 또는 절대 경로 |

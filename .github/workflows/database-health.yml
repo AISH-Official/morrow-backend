@@ -1,0 +1,50 @@
+name: Production database health
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$SSH_KEY_B64" | base64 --decode > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Check service, schema, and persistence
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh ec2-user@"$EC2_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          sudo systemctl is-active postgresql >/dev/null 2>&1 || sudo systemctl is-active postgresql-16 >/dev/null
+          sudo systemctl is-active morrow-api >/dev/null
+
+          sudo -u postgres psql --dbname=morrow --set=ON_ERROR_STOP=1 <<'SQL'
+          SELECT 'database=' || current_database() || ', user=' || current_user;
+          SELECT 'public_tables=' || count(*) FROM information_schema.tables WHERE table_schema = 'public';
+          SELECT expected.name || '=' || CASE WHEN to_regclass('public.' || expected.name) IS NULL THEN 'MISSING' ELSE 'OK' END
+          FROM (VALUES
+            ('assistant_messages'), ('check_ins'), ('device_sessions'), ('health_signal_snapshots'),
+            ('push_devices'), ('recommendation_feedbacks'), ('recommendations'), ('timelines'), ('user_memories')
+          ) AS expected(name)
+          ORDER BY expected.name;
+          SELECT 'device_sessions=' || count(*) FROM device_sessions;
+          SELECT 'health_snapshots=' || count(*) FROM health_signal_snapshots;
+          SELECT 'assistant_messages=' || count(*) FROM assistant_messages;
+          SELECT 'database_size=' || pg_size_pretty(pg_database_size(current_database()));
+          SELECT 'read_write_probe=OK' WHERE NOT pg_is_in_recovery();
+          SQL
+          REMOTE

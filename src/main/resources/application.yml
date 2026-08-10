@@ -41,3 +41,8 @@ morrow:
       watch-topic: ${APNS_WATCH_TOPIC:com.qlsl1198.morrowwellness.watchkitapp}
   demo:
     seed: ${MORROW_DEMO_SEED:true}
+  demo-login:
+    enabled: ${MORROW_DEMO_LOGIN_ENABLED:false}
+    username: ${MORROW_DEMO_LOGIN_USERNAME:}
+    password: ${MORROW_DEMO_LOGIN_PASSWORD:}
+    user-id: ${MORROW_DEMO_LOGIN_USER_ID:hackathon-demo}

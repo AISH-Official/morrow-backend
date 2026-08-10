@@ -26,6 +26,13 @@ public class DeviceAuthService {
         return saveRotated(existing, deviceId, deviceName, platform, userId);
     }
 
+    public Credentials registerForUser(String deviceId, String deviceName, DeviceSession.Platform platform, String userId) {
+        var normalizedUserId = normalizeUserId(userId);
+        if (normalizedUserId == null) throw new IllegalArgumentException("사용자 ID가 필요합니다.");
+        var existing = repository.findByDeviceId(deviceId).orElse(null);
+        return saveRotated(existing, deviceId, deviceName, platform, normalizedUserId);
+    }
+
     public Credentials pair(String pairingCode, String deviceId, String deviceName, DeviceSession.Platform platform) {
         var owner = repository.findByPairingCode(normalizeCode(pairingCode))
                 .orElseThrow(() -> new InvalidPairingCodeException("유효하지 않은 연결 코드입니다."));

@@ -13,7 +13,12 @@ import app.morrow.checkin.CheckInRepository;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest @AutoConfigureMockMvc
+@SpringBootTest(properties={
+ "morrow.demo-login.enabled=true",
+ "morrow.demo-login.username=사용자",
+ "morrow.demo-login.password=morrow1234",
+ "morrow.demo-login.user-id=hackathon-demo"
+}) @AutoConfigureMockMvc
 class DashboardControllerTest {
  @Autowired MockMvc mvc;
  @Autowired ObjectMapper objectMapper;
@@ -28,6 +33,26 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.metrics").exists())
    .andExpect(jsonPath("$.timeline").isArray())
    .andExpect(jsonPath("$.disclaimer").value("의료 진단이 아닌 일상 웰니스 분석입니다."));
+ }
+
+ @Test void hackathonDemoAccountCanLoginAndWrongPasswordIsRejected()throws Exception{
+  mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+   {"deviceId":"hackathon-login-test","deviceName":"Judge iPhone","platform":"IOS"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(org.hamcrest.Matchers.startsWith("user-")));
+
+  mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"username":"사용자","password":"morrow1234","deviceId":"hackathon-login-test","deviceName":"Judge iPhone","platform":"IOS"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value("hackathon-demo"))
+   .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+  mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"username":"사용자","password":"wrong","deviceId":"hackathon-login-fail","deviceName":"Judge iPhone","platform":"IOS"}
+   """))
+   .andExpect(status().isUnauthorized());
  }
 
  @Test void nativeHealthSummaryFeedsWebDashboardAndIsIdempotent()throws Exception{
@@ -95,6 +120,15 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.safetyChecked").value(true))
    .andExpect(jsonPath("$.content").value(org.hamcrest.Matchers.containsString("109")))
    .andExpect(jsonPath("$.content").value(org.hamcrest.Matchers.containsString("119")));
+ }
+
+ @Test void proactiveInsightSkipsWhenNoRecentSignalsExist()throws Exception{
+  mvc.perform(post("/api/v1/assistant/proactive-insight").contentType(MediaType.APPLICATION_JSON).content("""
+   {"userId":"quiet-user"}
+   """))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.shouldNotify").value(false))
+   .andExpect(jsonPath("$.reason").value("NO_RECENT_SIGNALS"));
  }
 
  @Test void feedbackBecomesLongTermMemoryAndChangesTheNextAction()throws Exception{
