@@ -24,7 +24,7 @@ class PromptBuilderTest {
                 .contains("오늘 날짜: 2026-08-10")
                 .contains("상대적인 날짜")
                 .contains("일반 지식, 학습, 업무, 기술, 일상 질문")
-                .contains("답변 전체를 큰따옴표");
+                .contains("답변 어디에도 큰따옴표나 장식용 인용 부호를 사용하지 않습니다");
     }
 
     @Test

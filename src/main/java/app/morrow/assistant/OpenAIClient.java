@@ -84,7 +84,14 @@ public class OpenAIClient {
             }
             normalized = normalized.substring(1, normalized.length() - 1).strip();
         }
-        return normalized;
+        return normalized
+                .replace("\"", "")
+                .replace("“", "")
+                .replace("”", "")
+                .replace("„", "")
+                .replace("‟", "")
+                .replace("＂", "")
+                .strip();
     }
 
     public Status status() { return new Status(enabled, apiKey != null && !apiKey.isBlank(), model, enabled && apiKey != null && !apiKey.isBlank()); }

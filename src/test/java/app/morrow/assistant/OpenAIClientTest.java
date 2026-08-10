@@ -18,8 +18,14 @@ class OpenAIClientTest {
     }
 
     @Test
-    void preservesQuotesUsedInsideAResponse() {
+    void removesDoubleQuotesAnywhereInAResponse() {
         assertThat(OpenAIClient.normalizeContent("Morrow는 \"오늘\"을 서울 시간으로 계산합니다."))
-                .isEqualTo("Morrow는 \"오늘\"을 서울 시간으로 계산합니다.");
+                .isEqualTo("Morrow는 오늘을 서울 시간으로 계산합니다.");
+    }
+
+    @Test
+    void removesDecorativeQuotesFromMultipleSentences() {
+        assertThat(OpenAIClient.normalizeContent("“오늘”은 월요일입니다. \"편하게\" 이야기해 주세요."))
+                .isEqualTo("오늘은 월요일입니다. 편하게 이야기해 주세요.");
     }
 }
