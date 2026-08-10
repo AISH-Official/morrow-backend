@@ -1,6 +1,7 @@
 package app.morrow.assistant;
 
 import app.morrow.checkin.CheckIn;
+import app.morrow.health.HealthSignalSnapshot;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -8,6 +9,7 @@ import java.time.Clock;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Locale;
 
 @Component
@@ -42,6 +44,8 @@ public class PromptBuilder {
                 - 먼저 질문에 대한 핵심 답을 제시하고, 필요한 설명을 이어갑니다.
                 - 모델이 알고 있는 일반 지식은 적극적으로 활용하되 불확실한 사실을 단정하지 않습니다.
                 - 사용자 컨텍스트는 관련된 질문에만 사용하며, 기록에 없는 사실을 사용자의 정보인 것처럼 만들지 않습니다.
+                - Watch 또는 iPhone 건강 데이터가 제공되면 최신 기록을 우선하고, 측정 시각과 기기 출처를 함께 밝혀 답합니다.
+                - 건강 데이터의 변화나 패턴은 비교 가능한 기록이 둘 이상 있을 때만 설명하고, 데이터가 없거나 오래되었다면 그 한계를 명확히 말합니다.
                 - 자연스럽고 간결한 한국어로 답하고, 도움이 될 때만 짧은 목록을 사용합니다.
                 - 답변 전체를 큰따옴표, 작은따옴표 또는 인용 부호로 감싸지 않습니다.
                 - 특정 표현을 실제로 인용할 때를 제외하면 불필요한 따옴표를 사용하지 않습니다.
@@ -64,6 +68,12 @@ public class PromptBuilder {
     public String buildUserContextPrompt(UserContextCollector.UserContext context) {
         var sb = new StringBuilder();
         sb.append("=== 사용자 컨텍스트 ===\n\n");
+        if (!context.recentHealthSnapshots().isEmpty()) {
+            sb.append("최근 Watch/iPhone 건강 데이터 (기기에서 집계된 값이며 의료 진단 자료가 아님):\n");
+            context.recentHealthSnapshots().stream().limit(8).forEach(snapshot ->
+                    sb.append(formatHealthSnapshot(snapshot)).append('\n')
+            );
+        }
         if (!context.memories().isEmpty()) {
             sb.append("장기 개인화 메모리 (사용자별 저장소, 신뢰도와 근거 수 포함):\n");
             context.memories().stream().limit(12).forEach(memory -> sb.append(String.format(
@@ -105,12 +115,58 @@ public class PromptBuilder {
                             : message.getContent()
             )));
         }
-        if (context.recentCheckIns().isEmpty()
+        if (context.recentHealthSnapshots().isEmpty()
+                && context.recentCheckIns().isEmpty()
                 && context.recentTimelines().isEmpty()
                 && context.recentRecommendations().isEmpty()) {
             sb.append("아직 기록된 데이터가 없습니다. 기록이 필요한 질문이라면 체크인을 제안할 수 있습니다.\n");
         }
         return sb.toString();
+    }
+
+    private String formatHealthSnapshot(HealthSignalSnapshot snapshot) {
+        var source = snapshot.getSource() == HealthSignalSnapshot.Source.WATCH ? "Apple Watch" : "iPhone";
+        var recordedAt = snapshot.getRecordedAt() == null
+                ? "측정 시각 미기록"
+                : snapshot.getRecordedAt().atZoneSameInstant(timeZone)
+                        .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+        var metrics = new ArrayList<String>();
+
+        if (snapshot.getSleepMinutes() != null) {
+            var hours = snapshot.getSleepMinutes() / 60;
+            var minutes = snapshot.getSleepMinutes() % 60;
+            metrics.add("수면 " + hours + "시간 " + minutes + "분");
+        }
+        addMetric(metrics, "심박수", snapshot.getHeartRate(), "bpm", 0);
+        addMetric(metrics, "안정 심박수", snapshot.getRestingHeartRate(), "bpm", 0);
+        addMetric(metrics, "HRV", snapshot.getHrv(), "ms", 0);
+        addMetric(metrics, "걸음", snapshot.getSteps(), "걸음", 0);
+        addMetric(metrics, "활동 에너지", snapshot.getActiveEnergyKcal(), "kcal", 0);
+        addMetric(metrics, "운동", snapshot.getExerciseMinutes(), "분", 0);
+        if (snapshot.getDistanceMeters() != null) {
+            metrics.add(snapshot.getDistanceMeters() >= 1000
+                    ? String.format(Locale.KOREAN, "거리 %.2fkm", snapshot.getDistanceMeters() / 1000)
+                    : String.format(Locale.KOREAN, "거리 %.0fm", snapshot.getDistanceMeters()));
+        }
+        addMetric(metrics, "오른 층", snapshot.getFlightsClimbed(), "층", 0);
+        addMetric(metrics, "호흡수", snapshot.getRespiratoryRate(), "회/분", 1);
+        addMetric(metrics, "산소포화도", snapshot.getOxygenSaturationPercent(), "%", 1);
+
+        return "- " + recordedAt + " · " + source + ": "
+                + (metrics.isEmpty() ? "측정값 미기록" : String.join(", ", metrics));
+    }
+
+    private void addMetric(
+            ArrayList<String> metrics,
+            String label,
+            Double value,
+            String unit,
+            int decimals
+    ) {
+        if (value == null) {
+            return;
+        }
+        metrics.add(String.format(Locale.KOREAN, "%s %." + decimals + "f%s", label, value, unit));
     }
 
     public String buildPersonalizedFallback(UserContextCollector.UserContext context, String message) {
