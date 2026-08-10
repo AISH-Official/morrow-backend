@@ -51,6 +51,29 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+      - name: Sync OpenAI runtime secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_ENABLED: ${{ secrets.OPENAI_ENABLED }}
+        run: |
+          test -n "$OPENAI_API_KEY"
+          test -n "$OPENAI_MODEL"
+          case "$OPENAI_ENABLED" in
+            true|false) ;;
+            *) echo "OPENAI_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+
+          {
+            printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
+            printf 'OPENAI_MODEL=%s\n' "$OPENAI_MODEL"
+            printf 'OPENAI_ENABLED=%s\n' "$OPENAI_ENABLED"
+          } | ssh ec2-user@"$EC2_HOST" \
+            'sudo tee /etc/morrow-openai.env >/dev/null && sudo chmod 600 /etc/morrow-openai.env'
+
+          ssh ec2-user@"$EC2_HOST" \
+            'sudo mkdir -p /etc/systemd/system/morrow-api.service.d && printf "%s\n" "[Service]" "EnvironmentFile=-/etc/morrow-openai.env" | sudo tee /etc/systemd/system/morrow-api.service.d/openai.conf >/dev/null && sudo systemctl daemon-reload'
       - name: Upload release
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}

@@ -253,7 +253,7 @@ mvn spring-boot:run
 4. `current.jar` 심볼릭 링크를 새 릴리스로 교체하고 `morrow-api` 재시작
 5. `/actuator/health`가 `UP`인지 확인하고, 실패하면 직전 릴리스로 롤백
 
-저장소 Actions secrets에는 `EC2_HOST`, `EC2_SSH_KEY_B64`, `EC2_KNOWN_HOSTS`가 필요합니다. 데이터베이스 비밀번호와 애플리케이션 환경 변수는 EC2의 `/etc/morrow.env`에만 보관하며 GitHub에는 복사하지 않습니다.
+저장소 Actions secrets에는 `EC2_HOST`, `EC2_SSH_KEY_B64`, `EC2_KNOWN_HOSTS`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_ENABLED`가 필요합니다. OpenAI 설정은 배포할 때 EC2의 `/etc/morrow-openai.env`로 동기화되고, 데이터베이스 비밀번호는 EC2의 `/etc/morrow.env`에만 보관하며 GitHub에는 복사하지 않습니다.
 
 ## 테스트와 CI
 
