@@ -146,6 +146,22 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.timeline[0].time").value(koreanTime.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))));
  }
 
+ @Test void timelineIsSortedByDisplayedKoreanTimeEvenWhenSyncedOutOfOrder()throws Exception{
+  var date=java.time.OffsetDateTime.now(java.time.ZoneId.of("Asia/Seoul")).toLocalDate();
+  var late=date.atTime(18,30).atZone(java.time.ZoneId.of("Asia/Seoul")).toOffsetDateTime();
+  var early=date.atTime(8,15).atZone(java.time.ZoneId.of("Asia/Seoul")).toOffsetDateTime();
+  for(var value:java.util.List.of(java.util.Map.of("id","late","time",late),java.util.Map.of("id","early","time",early))){
+   mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
+    "userId","timeline-order-user","clientEventId",value.get("id"),"status","OK","cause","WORK","note","정렬 확인","source","WEB","recordedAt",value.get("time").toString()
+   )))).andExpect(status().isCreated());
+  }
+
+  mvc.perform(get("/api/v1/dashboard").param("userId","timeline-order-user"))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.timeline[0].time").value("08:15"))
+   .andExpect(jsonPath("$.timeline[1].time").value("18:30"));
+ }
+
  @Test void checkInCreatesExplainableTimelineAndRecommendation()throws Exception{
   var userId="workflow-user";
   mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content("""
