@@ -61,8 +61,10 @@ Watch · iPhone · Web
     │   │   ├── personalization/  설명 가능한 사용자별 장기 메모리
     │   │   ├── assistant/        안전 필터·컨텍스트·OpenAI·fallback
     │   │   ├── dashboard/        회복 부하·점수·건강 지표 집계
-    │   │   ├── report/           최근 7일 패턴과 주간 리포트
-    │   │   ├── notification/     APNs 기기·게이트웨이·회복 알림
+│   │   ├── report/           최근 7일 패턴과 주간 리포트
+│   │   ├── recovery/         회복 행동 실행·완료·효과 학습
+│   │   ├── notification/     APNs 기기·게이트웨이·회복 알림
+│   │   ├── demo/             심사용 합성 시나리오
     │   │   ├── privacy/          사용자 데이터 전체 삭제
     │   │   └── config/           CORS와 발표용 데모 데이터
     │   └── resources
@@ -155,7 +157,18 @@ Watch / iPhone / Web 체크인
 
 위기 표현은 119·112·자살예방상담전화 109 안내를 우선하고, 의료 진단·처방 요청에는 전문가 상담을 안내합니다.
 
-### 5. 개인정보 전체 삭제
+### 5. 회복 행동 효과 학습
+
+```text
+건강·체크인 신호 감지
+  → 지금 필요한 이유와 신뢰도 포함 알림
+  → Watch / iPhone / Web에서 행동 타이머 실행
+  → 나아짐·그대로·불편 결과 기록
+  → 계정별 행동 선호 학습
+  → 다음 알림과 주간 효과 리포트에 반영
+```
+
+### 6. 개인정보 전체 삭제
 
 `DELETE /api/v1/users/me/data`는 해당 사용자의 체크인, 타임라인, 추천·피드백, AI 대화, 개인화 메모리, 건강 요약, APNs 기기 토큰을 하나의 서비스에서 삭제합니다.
 
@@ -170,6 +183,7 @@ Watch / iPhone / Web 체크인
 | `Recommendation` | 행동 제목, 설명 가능한 근거, 활성·완료 상태 |
 | `RecommendationFeedback` | 실행 여부, 도움 여부, 사용자 메모 |
 | `UserMemory` | 반복 원인, 회복 전략, 선호·목표, 근거와 신뢰도 |
+| `RecoveryAttempt` | 제안 행동, 감지 근거·신뢰도, 실행 상태, 사용자 체감 결과 |
 | `AssistantMessage` | 사용자·AI 대화와 안전 검사 결과 |
 | `PushDevice` | APNs 토큰, 플랫폼, sandbox·production 환경, 활성 상태 |
 
@@ -187,7 +201,11 @@ Watch / iPhone / Web 체크인
 | `GET` | `/dashboard` | 회복 부하, 점수, 지표, 타임라인, 추천 조회 |
 | `PATCH` | `/timeline/{id}` | 타임라인 내용·사용자 확인 상태 수정 |
 | `POST` | `/recommendations/{id}/feedback` | 추천 완료·도움 여부 기록 |
+| `GET/POST` | `/recovery-attempts` | 최근 회복 행동 조회·실행 시작 |
+| `PATCH` | `/recovery-attempts/{id}/start` | 알림으로 제안된 행동 시작 |
+| `PATCH` | `/recovery-attempts/{id}/complete` | 실행 뒤 체감 효과 기록·개인화 학습 |
 | `GET` | `/reports/weekly` | 최근 7일 상태·원인 패턴 조회 |
+| `POST` | `/demo/scenarios/{scenario}` | 데모 계정 전용 합성 시나리오 적용 |
 | `GET` | `/personalization/profile` | 개인화 메모리 통계 조회 |
 | `GET/POST` | `/personalization/memories` | 활성 메모리 조회·사용자 선호/목표 생성 |
 | `PATCH/DELETE` | `/personalization/memories/{id}` | 메모리 수정·삭제 |
@@ -291,6 +309,8 @@ mvn --batch-mode test
 - 사용자 데이터 격리와 전체 삭제
 - 위기 표현 안전 응답
 - 추천 피드백 → 개인화 메모리 → 다음 행동 변경
+- 회복 실행 결과 → 행동별 개인화 학습과 주간 효과 리포트
+- 데모 계정의 감지 → 실행 → 효과 학습 시나리오
 - 기기 페어링과 Bearer 사용자 범위
 - iPhone·Watch APNs 토큰 등록
 

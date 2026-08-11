@@ -2,6 +2,8 @@ package app.morrow.report;
 
 import app.morrow.checkin.CheckIn;
 import app.morrow.checkin.CheckInRepository;
+import app.morrow.recovery.RecoveryAttempt;
+import app.morrow.recovery.RecoveryAttemptRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,10 +20,12 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ReportService {
     private final CheckInRepository checkIns;
+    private final RecoveryAttemptRepository recoveryAttempts;
     private final ZoneId timeZone;
 
-    public ReportService(CheckInRepository checkIns, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone) {
+    public ReportService(CheckInRepository checkIns, RecoveryAttemptRepository recoveryAttempts, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone) {
         this.checkIns = checkIns;
+        this.recoveryAttempts = recoveryAttempts;
         this.timeZone = ZoneId.of(timeZone);
     }
 
@@ -33,6 +37,9 @@ public class ReportService {
                 userId, previousStart.atStartOfDay(timeZone).toOffsetDateTime());
         var current = records.stream().filter(value -> !localDate(value).isBefore(currentStart)).toList();
         var previous = records.stream().filter(value -> localDate(value).isBefore(currentStart)).toList();
+        var attempts = recoveryAttempts.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, previousStart.atStartOfDay(timeZone).toOffsetDateTime());
+        var currentAttempts = attempts.stream().filter(value -> !localDate(value).isBefore(currentStart)).toList();
+        var completedAttempts = currentAttempts.stream().filter(value -> value.getStatus() == RecoveryAttempt.Status.COMPLETED && value.getOutcome() != null).toList();
 
         var statusCounts = current.stream().collect(Collectors.groupingBy(CheckIn::getStatus, Collectors.counting()));
         var causeCounts = current.stream().filter(value -> value.getCause() != null)
@@ -49,15 +56,25 @@ public class ReportService {
             var values = current.stream().filter(value -> localDate(value).equals(target)).toList();
             daily.add(new DailyPoint(day, values.isEmpty() ? null : (int) Math.round(averageScore(values)), values.size()));
         }
-        var patterns = current.isEmpty() ? List.<String>of() : List.of(
-                topStatus + " 상태가 가장 많이 기록됨",
-                topCause == null ? "다양한 원인이 기록됨" : topCause + " 원인이 주요 맥락",
-                previous.isEmpty() ? "비교할 지난주 기록이 더 필요함" : String.format("지난주보다 회복 흐름 %+.1f점", change));
+        var improvedCounts = completedAttempts.stream().filter(value -> value.getOutcome() == RecoveryAttempt.Outcome.IMPROVED).collect(Collectors.groupingBy(RecoveryAttempt::getAction, Collectors.counting()));
+        var topHelpfulAction = improvedCounts.entrySet().stream().max(Map.Entry.comparingByValue()).map(value -> actionLabel(value.getKey())).orElse(null);
+        var improved = completedAttempts.stream().filter(value -> value.getOutcome() == RecoveryAttempt.Outcome.IMPROVED).count();
+        var helpfulRate = completedAttempts.isEmpty() ? 0 : improved * 100.0 / completedAttempts.size();
+        var patterns = new ArrayList<String>();
+        if (!current.isEmpty()) {
+            patterns.add(topStatus + " 상태가 가장 많이 기록됨");
+            patterns.add(topCause == null ? "다양한 원인이 기록됨" : topCause + " 원인이 주요 맥락");
+            patterns.add(previous.isEmpty() ? "비교할 지난주 기록이 더 필요함" : String.format("지난주보다 회복 흐름 %+.1f점", change));
+        }
+        if (!completedAttempts.isEmpty()) patterns.add("회복 행동 " + completedAttempts.size() + "회 실행 · " + Math.round(helpfulRate) + "%에서 나아짐");
         var insight = insight(current.size(), average, change, previous.isEmpty());
-        return new WeeklyReport(current.size(), topStatus, topCause, average, change, daily, patterns, insight);
+        var recoveryInsight = recoveryInsight(currentAttempts.size(), completedAttempts.size(), topHelpfulAction, helpfulRate);
+        return new WeeklyReport(current.size(), topStatus, topCause, average, change, daily, patterns, insight,
+                currentAttempts.size(), completedAttempts.size(), helpfulRate, topHelpfulAction, recoveryInsight);
     }
 
     private LocalDate localDate(CheckIn value) { return value.getRecordedAt().atZoneSameInstant(timeZone).toLocalDate(); }
+    private LocalDate localDate(RecoveryAttempt value) { return value.getCreatedAt().atZoneSameInstant(timeZone).toLocalDate(); }
     private double averageScore(List<CheckIn> values) { return values.stream().mapToInt(value -> statusScore(value.getStatus())).average().orElse(0); }
     private int statusScore(CheckIn.Status status) { return switch (status) { case OK -> 100; case TENSE -> 60; case LOW_FOCUS -> 55; case TIRED -> 45; case UNCOMFORTABLE -> 35; }; }
     private <T extends Enum<T>> String maxName(Map<T, Long> values) { return values.entrySet().stream().max(Map.Entry.comparingByValue()).map(value -> value.getKey().name()).orElse(null); }
@@ -68,8 +85,20 @@ public class ReportService {
         if (average >= 70) return "이번 주는 전반적으로 안정적인 흐름을 유지했어요.";
         return "부담 신호가 반복됐어요. 가장 잦은 원인부터 작게 조정해 보세요.";
     }
+    private String recoveryInsight(int suggested, int completed, String topAction, double helpfulRate) {
+        if (suggested == 0) return "이번 주에는 아직 회복 행동 제안이 없었어요.";
+        if (completed == 0) return "제안은 있었지만 완료 효과가 기록되지 않았어요. 다음 행동 뒤 한 번만 평가해 주세요.";
+        if (topAction != null && helpfulRate >= 60) return topAction + "이 가장 잘 맞았어요. 다음 주에도 우선 제안할게요.";
+        return "효과 피드백이 쌓이는 중이에요. 다음 주에는 더 잘 맞는 행동을 우선할게요.";
+    }
+    private String actionLabel(RecoveryAttempt.Action action) { return switch (action) {
+        case BREATH -> "1분 호흡"; case WALK -> "짧은 걷기"; case WATER_WALK -> "물 한 잔과 걷기";
+        case STRETCH -> "스트레칭"; case FOCUS -> "짧은 집중"; case SCREEN_BREAK -> "화면 휴식";
+    }; }
 
     public record DailyPoint(LocalDate date, Integer score, int checkInCount) {}
     public record WeeklyReport(int totalCheckIns, String topStatus, String topCause, double improvementRate,
-                               double changeFromPrevious, List<DailyPoint> dailyScores, List<String> patterns, String insights) {}
+                               double changeFromPrevious, List<DailyPoint> dailyScores, List<String> patterns, String insights,
+                               int suggestedRecoveryCount, int completedRecoveryCount, double recoveryHelpfulRate,
+                               String topHelpfulAction, String recoveryInsight) {}
 }

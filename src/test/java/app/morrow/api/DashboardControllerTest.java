@@ -63,6 +63,36 @@ class DashboardControllerTest {
    .andExpect(status().isUnauthorized());
  }
 
+ @Test void demoScenarioBuildsTheClosedRecoveryLoopForJudging()throws Exception{
+  var login=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"사용자","deviceId":"aac-demo-browser","deviceName":"AAC Judge","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value("hackathon-demo"))
+   .andReturn();
+  var token=objectMapper.readTree(login.getResponse().getContentAsString()).path("accessToken").asText();
+
+  mvc.perform(post("/api/v1/demo/scenarios/TENSION").header("Authorization","Bearer "+token))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.scenario").value("TENSION"))
+   .andExpect(jsonPath("$.title").value("발표 전 긴장 상승"));
+  mvc.perform(post("/api/v1/demo/scenarios/TENSION").header("Authorization","Bearer "+token))
+   .andExpect(status().isOk());
+
+  mvc.perform(get("/api/v1/dashboard").header("Authorization","Bearer "+token))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.metrics.restingHeartRate").value(82))
+   .andExpect(jsonPath("$.scoreReasons[0]").value(org.hamcrest.Matchers.containsString("안정 심박")))
+   .andExpect(jsonPath("$.timeline.length()").value(1))
+   .andExpect(jsonPath("$.recommendation").exists());
+  mvc.perform(get("/api/v1/reports/weekly").header("Authorization","Bearer "+token))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.suggestedRecoveryCount").value(5))
+   .andExpect(jsonPath("$.completedRecoveryCount").value(4))
+   .andExpect(jsonPath("$.recoveryHelpfulRate").value(75.0))
+   .andExpect(jsonPath("$.topHelpfulAction").value("1분 호흡"));
+ }
+
  @Test void accountIdLoginKeepsThePhoneLinkAfterLoggingInAgain()throws Exception{
   var firstLogin=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
    {"accountId":"subin","deviceId":"account-web-first","deviceName":"First Browser","platform":"WEB"}

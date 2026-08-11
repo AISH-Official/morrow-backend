@@ -10,7 +10,7 @@ import app.morrow.recommendation.Recommendation;
 import app.morrow.recommendation.RecommendationFeedbackRepository;
 import app.morrow.recommendation.RecommendationRepository;
 import app.morrow.timeline.Timeline;
-import app.morrow.timeline.TimelineRepository;
+import app.morrow.timeline.TimelineService;
 import app.morrow.auth.AccountAuthService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 public class UserContextCollector {
     private final HealthSignalSnapshotRepository healthSnapshotRepository;
     private final CheckInRepository checkInRepository;
-    private final TimelineRepository timelineRepository;
+    private final TimelineService timelines;
     private final RecommendationRepository recommendationRepository;
     private final RecommendationFeedbackRepository feedbackRepository;
     private final AssistantMessageRepository messageRepository;
@@ -34,7 +34,7 @@ public class UserContextCollector {
     public UserContextCollector(
             HealthSignalSnapshotRepository healthSnapshotRepository,
             CheckInRepository checkInRepository,
-            TimelineRepository timelineRepository,
+            TimelineService timelines,
             RecommendationRepository recommendationRepository,
             RecommendationFeedbackRepository feedbackRepository,
             AssistantMessageRepository messageRepository,
@@ -44,7 +44,7 @@ public class UserContextCollector {
     ) {
         this.healthSnapshotRepository = healthSnapshotRepository;
         this.checkInRepository = checkInRepository;
-        this.timelineRepository = timelineRepository;
+        this.timelines = timelines;
         this.recommendationRepository = recommendationRepository;
         this.feedbackRepository = feedbackRepository;
         this.messageRepository = messageRepository;
@@ -59,7 +59,7 @@ public class UserContextCollector {
                 ? healthSnapshotRepository.findTop12ByUserIdOrderByRecordedAtDesc(userId)
                 : List.<HealthSignalSnapshot>of();
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);
-        var recentTimelines = timelineRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(userId, weekAgo);
+        var recentTimelines = timelines.findRecentByUserId(userId, weekAgo);
         var recentRecommendations = recommendationRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, weekAgo);
         var recentMessages = messageRepository.findTop24ByUserIdOrderByCreatedAtDesc(userId);
         var feedbackSummary = recentRecommendations.stream()

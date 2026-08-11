@@ -8,6 +8,9 @@ import java.util.Map;
 import app.morrow.health.HealthSignalSnapshot;
 import org.springframework.beans.factory.annotation.Value;
 import java.time.ZoneId;
+import app.morrow.personalization.PersonalizationService;
+import app.morrow.recovery.RecoveryAttempt;
+import app.morrow.recovery.RecoveryAttemptService;
 
 @Service
 @Transactional
@@ -16,8 +19,10 @@ public class PushNotificationService {
     private final ApnsGateway gateway;
     private final ApnsProperties properties;
     private final ZoneId timeZone;
+    private final PersonalizationService personalization;
+    private final RecoveryAttemptService recoveryAttempts;
 
-    public PushNotificationService(PushDeviceRepository repository, ApnsGateway gateway, ApnsProperties properties, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone) { this.repository = repository; this.gateway = gateway; this.properties = properties; this.timeZone = ZoneId.of(timeZone); }
+    public PushNotificationService(PushDeviceRepository repository, ApnsGateway gateway, ApnsProperties properties, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone, PersonalizationService personalization, RecoveryAttemptService recoveryAttempts) { this.repository = repository; this.gateway = gateway; this.properties = properties; this.timeZone = ZoneId.of(timeZone); this.personalization = personalization; this.recoveryAttempts = recoveryAttempts; }
 
     public PushDevice register(String userId, String token, PushDevice.Platform platform, PushDevice.Environment environment) {
         var normalized = token.replaceAll("[^0-9a-fA-F]", "").toLowerCase();
@@ -51,31 +56,50 @@ public class PushNotificationService {
     }
 
     public DispatchResult sendActionableRecoveryAlert(HealthSignalSnapshot snapshot, int load) {
-        var title = "지금 1분만 호흡해요";
-        var body = "4초 들이마시고 6초 내쉬기를 6번 반복해 보세요.";
-        var action = "BREATH";
+        return sendActionableRecoveryAlert(snapshot, load, "최근 개인 기준에서 부담 신호가 감지됐어요.", "LOW");
+    }
+
+    public DispatchResult sendActionableRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason, String confidence) {
+        var defaultAction = RecoveryAttempt.Action.BREATH;
+        var trigger = "RECOVERY_LOAD";
         if (snapshot.getSleepMinutes() != null && snapshot.getSleepMinutes() > 0 && snapshot.getSleepMinutes() < 360) {
-            title = "지금 물 한 잔 어때요?";
-            body = "수면이 짧았어요. 물을 마시고 5분만 천천히 걸어 몸을 깨워보세요.";
-            action = "WATER_WALK";
+            defaultAction = RecoveryAttempt.Action.WATER_WALK;
+            trigger = "SHORT_SLEEP";
         } else if (snapshot.getSteps() != null && snapshot.getSteps() < 2500) {
-            title = "지금 5분 걸어볼까요?";
-            body = "오늘 움직임이 적어요. 자리에서 일어나 가까운 곳까지 가볍게 걸어보세요.";
-            action = "WALK";
+            defaultAction = RecoveryAttempt.Action.WALK;
+            trigger = "LOW_ACTIVITY";
         } else if (snapshot.getRestingHeartRate() != null && snapshot.getRestingHeartRate() > 78) {
-            title = "어깨 힘부터 빼볼까요?";
-            body = "편한 자세로 바꾸고 길게 내쉬는 호흡을 1분만 시작해 보세요.";
-            action = "BREATH";
+            defaultAction = RecoveryAttempt.Action.BREATH;
+            trigger = "ELEVATED_RESTING_HEART_RATE";
         } else if (snapshot.getExerciseMinutes() != null && snapshot.getExerciseMinutes() >= 45) {
-            title = "오늘은 회복을 먼저 챙겨요";
-            body = "움직임은 충분했어요. 3분 스트레칭하고 물 한 잔으로 마무리해 보세요.";
-            action = "STRETCH";
+            defaultAction = RecoveryAttempt.Action.STRETCH;
+            trigger = "POST_EXERCISE";
         }
-        return send(snapshot.getUserId(), title, body, "MORROW_ACTION", Map.of("type", "RECOVERY", "action", action, "load", load), true);
+        var selected = personalization.personalizeProactiveAction(snapshot.getUserId(), defaultAction);
+        var content = contentFor(selected.action());
+        var explanation = reason == null || reason.isBlank() ? "최근 개인 기준에서 부담 신호가 감지됐어요." : reason;
+        var body = explanation + " " + content.body() + (selected.personalized() ? " " + selected.rationale() : "");
+        var attempt = recoveryAttempts.suggest(snapshot.getUserId(), selected.action(), trigger, explanation, confidence, RecoveryAttempt.Source.NOTIFICATION);
+        return send(snapshot.getUserId(), content.title(), body, "MORROW_ACTION", Map.of(
+                "type", "RECOVERY", "action", selected.action().name(), "load", load,
+                "attemptId", attempt.getId().toString(), "reason", explanation,
+                "confidence", confidence, "durationSeconds", content.durationSeconds()), true);
+    }
+
+    private ActionContent contentFor(RecoveryAttempt.Action action) {
+        return switch (action) {
+            case BREATH -> new ActionContent("지금 1분만 호흡해요", "4초 들이마시고 6초 내쉬기를 반복해 보세요.", 60);
+            case WALK -> new ActionContent("지금 5분 걸어볼까요?", "자리에서 일어나 가까운 곳까지 가볍게 걸어보세요.", 300);
+            case WATER_WALK -> new ActionContent("물 한 잔 뒤 가볍게 걸어요", "물을 마시고 3분만 천천히 걸어 몸을 깨워보세요.", 180);
+            case STRETCH -> new ActionContent("지금 3분 스트레칭해요", "어깨와 목부터 천천히 풀고 길게 숨을 내쉬어 보세요.", 180);
+            case FOCUS -> new ActionContent("할 일 하나만 5분 시작해요", "방해 요소를 닫고 가장 작은 한 단계부터 시작해 보세요.", 300);
+            case SCREEN_BREAK -> new ActionContent("지금 1분 화면에서 눈을 떼요", "먼 곳을 바라보고 어깨 힘을 천천히 빼보세요.", 60);
+        };
     }
 
     @Transactional(readOnly = true) public Status status() { return new Status(properties.isEnabled(), properties.ready(), repository.countByActiveTrue(), properties.getIosTopic(), properties.getWatchTopic()); }
     public record DispatchResult(int attempted, long accepted, java.util.List<DeviceResult> devices) {}
     public record DeviceResult(PushDevice.Platform platform, boolean accepted, int statusCode, String reason) {}
     public record Status(boolean enabled, boolean ready, long activeDevices, String iosTopic, String watchTopic) {}
+    private record ActionContent(String title, String body, int durationSeconds) {}
 }

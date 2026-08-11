@@ -76,5 +76,5 @@ public class UserMemory {
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 
     public enum Type { TRIGGER_PATTERN, RECOVERY_STRATEGY, PREFERENCE, GOAL }
-    public enum Source { CHECK_IN_PATTERN, RECOMMENDATION_FEEDBACK, USER_DECLARED }
+    public enum Source { CHECK_IN_PATTERN, RECOMMENDATION_FEEDBACK, RECOVERY_OUTCOME, USER_DECLARED }
 }

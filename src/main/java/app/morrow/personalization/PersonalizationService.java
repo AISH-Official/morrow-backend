@@ -5,6 +5,7 @@ import app.morrow.checkin.CheckInRepository;
 import app.morrow.recommendation.Recommendation;
 import app.morrow.recommendation.RecommendationFeedbackRepository;
 import app.morrow.recommendation.RecommendationRepository;
+import app.morrow.recovery.RecoveryAttempt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +40,16 @@ public class PersonalizationService {
         var result = helpful ? "도움이 됐음" : "도움이 되지 않았음";
         var summary = "‘" + recommendation.getTitle() + "’ 회복 행동이 " + result;
         observe(recommendation.getUserId(), UserMemory.Type.RECOVERY_STRATEGY, key, summary, helpful, UserMemory.Source.RECOMMENDATION_FEEDBACK);
+    }
+
+    public void learnFromRecoveryOutcome(String userId, RecoveryAttempt.Action action, RecoveryAttempt.Outcome outcome) {
+        var positive = outcome == RecoveryAttempt.Outcome.IMPROVED;
+        var result = switch (outcome) {
+            case IMPROVED -> "상태가 나아졌음";
+            case SAME -> "상태 변화가 없었음";
+            case WORSE -> "상태가 더 불편해졌음";
+        };
+        observe(userId, UserMemory.Type.RECOVERY_STRATEGY, recoveryKey(action), "‘" + actionLabel(action) + "’ 실행 후 " + result, positive, UserMemory.Source.RECOVERY_OUTCOME);
     }
 
     public UserMemory createDeclaredMemory(String userId, UserMemory.Type type, String summary) {
@@ -107,6 +118,29 @@ public class PersonalizationService {
         return new ActionAdvice(defaultTitle, defaultRationale + " 과거 피드백 " + total + "건에서도 이 방법이 잘 맞았어요.", true);
     }
 
+    @Transactional(readOnly = true)
+    public ProactiveAction personalizeProactiveAction(String userId, RecoveryAttempt.Action defaultAction) {
+        var normalized = normalizeUserId(userId);
+        var current = memories.findByUserIdAndMemoryKey(normalized, recoveryKey(defaultAction)).filter(UserMemory::isActive);
+        if (current.isPresent() && current.get().getPositiveEvidence() > current.get().getNegativeEvidence()) {
+            return new ProactiveAction(defaultAction, true, "과거 효과 피드백 " + current.get().getEvidenceCount() + "건을 반영했어요.");
+        }
+        var best = activeMemories(normalized).stream()
+                .filter(value -> value.getType() == UserMemory.Type.RECOVERY_STRATEGY)
+                .filter(value -> value.getMemoryKey().startsWith("strategy-action:"))
+                .filter(value -> value.getPositiveEvidence() > value.getNegativeEvidence())
+                .map(value -> parseRecoveryAction(value.getMemoryKey()))
+                .flatMap(java.util.Optional::stream)
+                .filter(value -> value != defaultAction)
+                .findFirst();
+        if (current.isPresent() && current.get().getNegativeEvidence() >= current.get().getPositiveEvidence()) {
+            var alternative = best.orElseGet(() -> saferAlternative(defaultAction));
+            return new ProactiveAction(alternative, true, "이전에 잘 맞지 않았던 행동 대신 더 적합한 방법으로 바꿨어요.");
+        }
+        if (best.isPresent()) return new ProactiveAction(best.get(), true, "이전에 효과가 좋았던 회복 행동을 우선했어요.");
+        return new ProactiveAction(defaultAction, false, "아직 행동 효과를 학습하는 중이에요.");
+    }
+
     private void observe(String userId, UserMemory.Type type, String key, String summary, boolean positive, UserMemory.Source source) {
         var normalized = normalizeUserId(userId);
         var memory = memories.findByUserIdAndMemoryKey(normalized, key).orElseGet(() -> new UserMemory(normalized, type, key, summary, source));
@@ -117,6 +151,31 @@ public class PersonalizationService {
     private String strategyKey(String title) {
         var normalized = title.toLowerCase(Locale.ROOT).replaceAll("[^가-힣a-z0-9]+", "-");
         return "strategy:" + normalized.substring(0, Math.min(normalized.length(), 150));
+    }
+
+    private String recoveryKey(RecoveryAttempt.Action action) { return "strategy-action:" + action.name().toLowerCase(Locale.ROOT); }
+    private java.util.Optional<RecoveryAttempt.Action> parseRecoveryAction(String key) {
+        try { return java.util.Optional.of(RecoveryAttempt.Action.valueOf(key.substring("strategy-action:".length()).toUpperCase(Locale.ROOT))); }
+        catch (RuntimeException ignored) { return java.util.Optional.empty(); }
+    }
+    private RecoveryAttempt.Action saferAlternative(RecoveryAttempt.Action action) {
+        return switch (action) {
+            case BREATH -> RecoveryAttempt.Action.WALK;
+            case WALK, WATER_WALK -> RecoveryAttempt.Action.BREATH;
+            case STRETCH -> RecoveryAttempt.Action.WALK;
+            case FOCUS -> RecoveryAttempt.Action.SCREEN_BREAK;
+            case SCREEN_BREAK -> RecoveryAttempt.Action.BREATH;
+        };
+    }
+    private String actionLabel(RecoveryAttempt.Action action) {
+        return switch (action) {
+            case BREATH -> "1분 호흡";
+            case WALK -> "짧은 걷기";
+            case WATER_WALK -> "물 한 잔과 걷기";
+            case STRETCH -> "스트레칭";
+            case FOCUS -> "짧은 집중";
+            case SCREEN_BREAK -> "화면에서 눈 떼기";
+        };
     }
 
     private UserMemory findOwned(UUID id, String userId) {
@@ -130,5 +189,6 @@ public class PersonalizationService {
 
     public record Profile(String userId, int activeMemoryCount, int evidenceCount, long helpfulStrategyCount, long avoidStrategyCount, OffsetDateTime lastLearnedAt, boolean personalized) {}
     public record ActionAdvice(String title, String rationale, boolean personalized) {}
+    public record ProactiveAction(RecoveryAttempt.Action action, boolean personalized, String rationale) {}
     public static class MemoryNotFoundException extends RuntimeException { public MemoryNotFoundException(UUID id) { super("User memory not found: " + id); } }
 }
