@@ -32,7 +32,7 @@ public class AuthController {
 
     @PostMapping("/device") @ResponseStatus(HttpStatus.CREATED)
     CredentialsResponse register(@Valid @RequestBody RegisterRequest request) {
-        return CredentialsResponse.from(service.register(request.deviceId(), request.deviceName(), request.platform(), request.userId()));
+        return CredentialsResponse.from(service.register(request.deviceId(), request.deviceName(), request.platform()));
     }
 
     @PostMapping("/pair") @ResponseStatus(HttpStatus.CREATED)
@@ -90,6 +90,9 @@ public class AuthController {
     @ExceptionHandler(DeviceAuthService.InvalidPairingCodeException.class) @ResponseStatus(HttpStatus.NOT_FOUND)
     ErrorResponse invalidCode(DeviceAuthService.InvalidPairingCodeException error) { return new ErrorResponse(error.getMessage()); }
 
+    @ExceptionHandler(DeviceAuthService.DeviceAlreadyRegisteredException.class) @ResponseStatus(HttpStatus.CONFLICT)
+    ErrorResponse deviceAlreadyRegistered(DeviceAuthService.DeviceAlreadyRegisteredException error) { return new ErrorResponse(error.getMessage()); }
+
     @ExceptionHandler(DemoLoginService.InvalidCredentialsException.class) @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ErrorResponse invalidCredentials(DemoLoginService.InvalidCredentialsException error) { return new ErrorResponse(error.getMessage()); }
 
@@ -120,7 +123,7 @@ public class AuthController {
                 : null;
     }
 
-    record RegisterRequest(@NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform, @Size(max=100) String userId) {}
+    record RegisterRequest(@NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}
     record PairRequest(@NotBlank @Size(max=8) String pairingCode, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}
     record AccountLoginRequest(@NotBlank @Size(max=80) String accountId, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}
     record PasswordAccountRequest(@NotBlank @Size(min=2,max=80) String accountId, @NotBlank @Size(min=8,max=120) String password, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}

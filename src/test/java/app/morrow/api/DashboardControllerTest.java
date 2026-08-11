@@ -9,6 +9,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import app.morrow.health.HealthSignalSnapshotRepository;
 import app.morrow.checkin.CheckInRepository;
+import app.morrow.auth.AccountLinkRepository;
+import app.morrow.assistant.UserContextCollector;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -17,13 +19,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  "morrow.demo-login.enabled=true",
  "morrow.demo-login.username=사용자",
  "morrow.demo-login.password=morrow1234",
- "morrow.demo-login.user-id=hackathon-demo"
+ "morrow.demo-login.user-id=hackathon-demo",
+ "morrow.assistant.include-health-data=true"
 }) @AutoConfigureMockMvc
 class DashboardControllerTest {
  @Autowired MockMvc mvc;
  @Autowired ObjectMapper objectMapper;
  @Autowired HealthSignalSnapshotRepository healthSnapshots;
  @Autowired CheckInRepository checkIns;
+ @Autowired AccountLinkRepository accountLinks;
+ @Autowired UserContextCollector userContextCollector;
 
  @Test void githubPagesOriginCanCallApi()throws Exception{
   mvc.perform(options("/api/v1/dashboard")
@@ -61,6 +66,71 @@ class DashboardControllerTest {
    {"username":"사용자","password":"wrong","deviceId":"hackathon-login-fail","deviceName":"Judge iPhone","platform":"IOS"}
    """))
    .andExpect(status().isUnauthorized());
+ }
+
+ @Test void publicDeviceRegistrationCannotClaimAUserOrRotateAnExistingDevice()throws Exception{
+  var anonymousLogin=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+   {"deviceId":"security-device","deviceName":"Untrusted Device","platform":"WEB","userId":"hackathon-demo"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(org.hamcrest.Matchers.startsWith("user-")))
+   .andReturn();
+  var anonymousToken=objectMapper.readTree(anonymousLogin.getResponse().getContentAsString()).path("accessToken").asText();
+
+  mvc.perform(patch("/api/v1/privacy/ai-health-consent")
+    .header("Authorization","Bearer "+anonymousToken)
+    .contentType(MediaType.APPLICATION_JSON)
+    .content("{\"consent\":true}"))
+   .andExpect(status().isBadRequest())
+   .andExpect(jsonPath("$.message").value("연결된 계정을 찾을 수 없습니다."));
+
+  mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+   {"deviceId":"security-device","deviceName":"Takeover Attempt","platform":"WEB","userId":"hackathon-demo"}
+   """))
+   .andExpect(status().isConflict());
+ }
+
+ @Test void demoConsentRepairsMissingAccountLinkAndIsSharedWithWatchAi()throws Exception{
+  var phoneLogin=mvc.perform(post("/api/v1/auth/account-login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"사용자","password":"morrow1234","deviceId":"consent-iphone","deviceName":"Demo iPhone","platform":"IOS"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value("hackathon-demo"))
+   .andReturn();
+  var phoneToken=objectMapper.readTree(phoneLogin.getResponse().getContentAsString()).path("accessToken").asText();
+
+  accountLinks.findByUserId("hackathon-demo").ifPresent(accountLinks::delete);
+  mvc.perform(patch("/api/v1/privacy/ai-health-consent")
+    .header("Authorization","Bearer "+phoneToken)
+    .contentType(MediaType.APPLICATION_JSON)
+    .content("{\"consent\":true}"))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.consent").value(true));
+
+  var watchLogin=mvc.perform(post("/api/v1/auth/account-login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"사용자","password":"morrow1234","deviceId":"consent-watch","deviceName":"Demo Watch","platform":"WATCHOS"}
+   """))
+   .andExpect(status().isCreated()).andReturn();
+  var watchToken=objectMapper.readTree(watchLogin.getResponse().getContentAsString()).path("accessToken").asText();
+  mvc.perform(get("/api/v1/privacy/ai-health-consent").header("Authorization","Bearer "+watchToken))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.consent").value(true));
+
+  mvc.perform(post("/api/v1/health/snapshots")
+    .header("Authorization","Bearer "+watchToken)
+    .contentType(MediaType.APPLICATION_JSON)
+    .content("""
+     {"userId":"hackathon-demo","clientSnapshotId":"consent-watch-health","source":"WATCH","heartRate":72,"hrv":48,"steps":4200}
+     """))
+   .andExpect(status().isCreated());
+  org.junit.jupiter.api.Assertions.assertFalse(userContextCollector.collectContext("hackathon-demo").recentHealthSnapshots().isEmpty());
+
+  mvc.perform(patch("/api/v1/privacy/ai-health-consent")
+    .header("Authorization","Bearer "+phoneToken)
+    .contentType(MediaType.APPLICATION_JSON)
+    .content("{\"consent\":false}"))
+   .andExpect(status().isOk());
+  org.junit.jupiter.api.Assertions.assertTrue(userContextCollector.collectContext("hackathon-demo").recentHealthSnapshots().isEmpty());
  }
 
  @Test void signupCreatesIsolatedAccountAndPasswordLoginKeepsItsUser()throws Exception{
@@ -120,8 +190,8 @@ class DashboardControllerTest {
  }
 
  @Test void demoScenarioBuildsTheClosedRecoveryLoopForJudging()throws Exception{
-  var login=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
-   {"accountId":"사용자","deviceId":"aac-demo-browser","deviceName":"AAC Judge","platform":"WEB"}
+  var login=mvc.perform(post("/api/v1/auth/account-login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"사용자","password":"morrow1234","deviceId":"aac-demo-browser","deviceName":"AAC Judge","platform":"WEB"}
    """))
    .andExpect(status().isCreated())
    .andExpect(jsonPath("$.userId").value("hackathon-demo"))
