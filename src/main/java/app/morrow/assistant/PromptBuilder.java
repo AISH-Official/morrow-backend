@@ -89,7 +89,7 @@ public class PromptBuilder {
             sb.append("\n최근 7일 체크인 기록:\n");
             context.recentCheckIns().stream().limit(10).forEach(checkIn -> sb.append(String.format(
                     "- %s: %s 상태, 원인: %s%s\n",
-                    checkIn.getRecordedAt().format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
+                    checkIn.getRecordedAt().atZoneSameInstant(timeZone).format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
                     translateStatus(checkIn.getStatus()),
                     checkIn.getCause() != null ? translateCause(checkIn.getCause()) : "미기록",
                     checkIn.getNote() != null ? " (" + checkIn.getNote() + ")" : ""
@@ -98,7 +98,7 @@ public class PromptBuilder {
         if (!context.recentTimelines().isEmpty()) {
             sb.append("\n최근 타임라인:\n");
             context.recentTimelines().stream().limit(5).forEach(timeline -> sb.append(String.format(
-                    "- %s: %s - %s\n", timeline.getTime(), timeline.getTitle(), timeline.getDetail()
+                    "- %s: %s - %s\n", timeline.getDisplayTime(timeZone), timeline.getTitle(), timeline.getDetail()
             )));
         }
         if (!context.recentRecommendations().isEmpty()) {

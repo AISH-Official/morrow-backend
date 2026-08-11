@@ -10,7 +10,9 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 
 @Component
@@ -21,14 +23,15 @@ public class DemoDataInitializer implements ApplicationRunner {
  private final CheckInService checkInService;
  private final TimelineService timelineService;
  private final PersonalizationService personalizationService;
+ private final ZoneId timeZone;
 
- public DemoDataInitializer(CheckInRepository repository,CheckInService checkInService,TimelineService timelineService,PersonalizationService personalizationService){
-  this.repository=repository;this.checkInService=checkInService;this.timelineService=timelineService;this.personalizationService=personalizationService;
+ public DemoDataInitializer(CheckInRepository repository,CheckInService checkInService,TimelineService timelineService,PersonalizationService personalizationService,@Value("${morrow.time-zone:Asia/Seoul}")String timeZone){
+  this.repository=repository;this.checkInService=checkInService;this.timelineService=timelineService;this.personalizationService=personalizationService;this.timeZone=ZoneId.of(timeZone);
  }
 
  @Override public void run(ApplicationArguments args){
   if(!repository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(USER_ID,OffsetDateTime.now().minusYears(10)).isEmpty())return;
-  var now=OffsetDateTime.now();
+  var now=OffsetDateTime.now(timeZone);
   var history=new ArrayList<CheckIn>();
   history.add(new CheckIn(USER_ID,CheckIn.Status.OK,CheckIn.Cause.WORK,"오전 집중이 잘 됐음",CheckIn.Source.IPHONE,now.minusDays(6)));
   history.add(new CheckIn(USER_ID,CheckIn.Status.TIRED,CheckIn.Cause.SLEEP,"늦게 잠듦",CheckIn.Source.WATCH,now.minusDays(5)));
@@ -43,9 +46,9 @@ public class DemoDataInitializer implements ApplicationRunner {
   history.add(new CheckIn(USER_ID,CheckIn.Status.TIRED,CheckIn.Cause.SLEEP,"아침부터 무거움",CheckIn.Source.WATCH,now.minusHours(5)));
   repository.saveAll(history);
 
-  timelineService.create(new TimelineService.CreateTimeline(USER_ID,now.minusHours(9).toLocalTime(),"수면 회복이 평소보다 낮음","최근 7일 평균보다 1시간 12분 짧았어요.",Timeline.Kind.SLEEP,false));
+  timelineService.create(new TimelineService.CreateTimeline(USER_ID,now.minusHours(9).toLocalTime(),"수면 회복이 평소보다 낮음","최근 7일 평균보다 1시간 12분 짧았어요.",Timeline.Kind.SLEEP,false,now.minusHours(9)));
   checkInService.create(new CheckInService.CreateCheckIn(USER_ID,CheckIn.Status.TIRED,CheckIn.Cause.SLEEP,"오후 집중력이 떨어짐",CheckIn.Source.WATCH,now.minusHours(3)));
-  timelineService.create(new TimelineService.CreateTimeline(USER_ID,now.minusHours(1).toLocalTime(),"짧은 걷기로 회복","7분 걷기 후 상태가 조금 나아졌어요.",Timeline.Kind.RECOVERY,true));
+  timelineService.create(new TimelineService.CreateTimeline(USER_ID,now.minusHours(1).toLocalTime(),"짧은 걷기로 회복","7분 걷기 후 상태가 조금 나아졌어요.",Timeline.Kind.RECOVERY,true,now.minusHours(1)));
   personalizationService.rebuild(USER_ID);
  }
 }

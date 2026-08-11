@@ -7,6 +7,7 @@ import app.morrow.timeline.Timeline;
 import app.morrow.timeline.TimelineService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -17,9 +18,10 @@ public class CheckInService {
  private final TimelineService timelineService;
  private final RecommendationService recommendationService;
  private final PersonalizationService personalizationService;
+ private final ZoneId timeZone;
 
- public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService){
-  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;
+ public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService,@Value("${morrow.time-zone:Asia/Seoul}")String timeZone){
+  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;this.timeZone=ZoneId.of(timeZone);
  }
 
  public CheckIn create(CreateCheckIn input){
@@ -30,8 +32,8 @@ public class CheckInService {
   }
   var recordedAt=input.recordedAt()==null?OffsetDateTime.now():input.recordedAt();
   var checkIn=repository.save(new CheckIn(userId,input.clientEventId(),input.status(),input.cause(),input.note(),input.source(),recordedAt));
-  var localTime=recordedAt.atZoneSameInstant(ZoneId.systemDefault()).toLocalTime();
-  timelineService.create(new TimelineService.CreateTimeline(userId,localTime,"상태 체크인",timelineDetail(checkIn),Timeline.Kind.CHECKIN,true));
+  var localTime=recordedAt.atZoneSameInstant(timeZone).toLocalTime();
+  timelineService.create(new TimelineService.CreateTimeline(userId,localTime,"상태 체크인",timelineDetail(checkIn),Timeline.Kind.CHECKIN,true,recordedAt));
   var recommendation=recommendationFor(checkIn);
   var personalized=personalizationService.personalizeAction(userId,checkIn.getStatus(),recommendation.title(),recommendation.rationale());
   recommendationService.create(new RecommendationService.CreateRecommendation(userId,personalized.title(),personalized.rationale(),Recommendation.Status.ACTIVE));

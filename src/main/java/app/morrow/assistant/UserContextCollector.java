@@ -55,7 +55,7 @@ public class UserContextCollector {
                 ? healthSnapshotRepository.findTop12ByUserIdOrderByRecordedAtDesc(userId)
                 : List.<HealthSignalSnapshot>of();
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);
-        var recentTimelines = timelineRepository.findByUserIdAndCreatedAtAfterOrderByTimeAsc(userId, weekAgo);
+        var recentTimelines = timelineRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(userId, weekAgo);
         var recentRecommendations = recommendationRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, weekAgo);
         var recentMessages = messageRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(
                 userId,

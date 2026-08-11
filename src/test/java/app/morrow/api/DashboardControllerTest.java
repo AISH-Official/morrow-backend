@@ -134,6 +134,18 @@ class DashboardControllerTest {
   org.junit.jupiter.api.Assertions.assertEquals(1,checkIns.findByUserIdOrderByRecordedAtAsc("native-checkin-user").size());
  }
 
+ @Test void utcCheckInIsDisplayedInKoreanTime()throws Exception{
+  var koreanTime=java.time.OffsetDateTime.now(java.time.ZoneId.of("Asia/Seoul")).withSecond(0).withNano(0);
+  var utcTime=koreanTime.withOffsetSameInstant(java.time.ZoneOffset.UTC);
+  mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
+   "userId","kst-user","clientEventId","kst-event","status","OK","cause","WORK","note","시간 확인","source","WEB","recordedAt",utcTime.toString()
+  )))).andExpect(status().isCreated());
+
+  mvc.perform(get("/api/v1/dashboard").param("userId","kst-user"))
+   .andExpect(status().isOk())
+   .andExpect(jsonPath("$.timeline[0].time").value(koreanTime.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))));
+ }
+
  @Test void checkInCreatesExplainableTimelineAndRecommendation()throws Exception{
   var userId="workflow-user";
   mvc.perform(post("/api/v1/check-ins").contentType(MediaType.APPLICATION_JSON).content("""

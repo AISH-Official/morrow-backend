@@ -25,6 +25,7 @@ openai:
   model: ${OPENAI_MODEL:gpt-4o}
   enabled: ${OPENAI_ENABLED:false}
 morrow:
+  time-zone: ${MORROW_TIME_ZONE:Asia/Seoul}
   assistant:
     time-zone: ${MORROW_TIME_ZONE:Asia/Seoul}
     include-health-data: ${MORROW_AI_INCLUDE_HEALTH_DATA:false}
