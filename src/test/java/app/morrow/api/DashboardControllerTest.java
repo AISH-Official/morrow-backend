@@ -25,6 +25,14 @@ class DashboardControllerTest {
  @Autowired HealthSignalSnapshotRepository healthSnapshots;
  @Autowired CheckInRepository checkIns;
 
+ @Test void githubPagesOriginCanCallApi()throws Exception{
+  mvc.perform(options("/api/v1/dashboard")
+    .header("Origin","https://aish-official.github.io")
+    .header("Access-Control-Request-Method","GET"))
+   .andExpect(status().isOk())
+   .andExpect(header().string("Access-Control-Allow-Origin","https://aish-official.github.io"));
+ }
+
  @Test void dashboardHasWellnessDataAndSafetyNotice()throws Exception{
   mvc.perform(get("/api/v1/dashboard"))
    .andExpect(status().isOk())
@@ -62,11 +70,13 @@ class DashboardControllerTest {
    """;
   mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
   mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
+  var refreshedPayload=payload.replace("\"steps\":8123","\"steps\":9345").replace("\"activeEnergyKcal\":356","\"activeEnergyKcal\":402");
+  mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(refreshedPayload)).andExpect(status().isCreated());
   mvc.perform(get("/api/v1/dashboard").param("userId",userId))
    .andExpect(status().isOk())
    .andExpect(jsonPath("$.metrics.sleepMinutes").value(392))
-   .andExpect(jsonPath("$.metrics.steps").value(8123))
-   .andExpect(jsonPath("$.metrics.activeEnergyKcal").value(356))
+   .andExpect(jsonPath("$.metrics.steps").value(9345))
+   .andExpect(jsonPath("$.metrics.activeEnergyKcal").value(402))
    .andExpect(jsonPath("$.metrics.exerciseMinutes").value(31));
   org.junit.jupiter.api.Assertions.assertEquals(1,healthSnapshots.count());
  }

@@ -13,8 +13,13 @@ public class HealthSignalSnapshotService{
  public HealthSignalSnapshot create(CreateSnapshot input){
   var userId=input.userId()==null||input.userId().isBlank()?"default-user":input.userId();
   var existing=repository.findByUserIdAndClientSnapshotId(userId,input.clientSnapshotId());
-  if(existing.isPresent())return existing.get();
-  var saved=repository.save(new HealthSignalSnapshot(userId,input.clientSnapshotId(),input.source(),input.sleepMinutes(),input.heartRate(),input.restingHeartRate(),input.hrv(),input.steps(),input.activeEnergyKcal(),input.exerciseMinutes(),input.distanceMeters(),input.flightsClimbed(),input.respiratoryRate(),input.oxygenSaturationPercent(),input.recordedAt()==null?OffsetDateTime.now():input.recordedAt()));
+  var recordedAt=input.recordedAt()==null?OffsetDateTime.now():input.recordedAt();
+  if(existing.isPresent()){
+   var snapshot=existing.get();
+   if(snapshot.refresh(input.source(),input.sleepMinutes(),input.heartRate(),input.restingHeartRate(),input.hrv(),input.steps(),input.activeEnergyKcal(),input.exerciseMinutes(),input.distanceMeters(),input.flightsClimbed(),input.respiratoryRate(),input.oxygenSaturationPercent(),recordedAt))events.publishEvent(new HealthSnapshotCreatedEvent(snapshot));
+   return snapshot;
+  }
+  var saved=repository.save(new HealthSignalSnapshot(userId,input.clientSnapshotId(),input.source(),input.sleepMinutes(),input.heartRate(),input.restingHeartRate(),input.hrv(),input.steps(),input.activeEnergyKcal(),input.exerciseMinutes(),input.distanceMeters(),input.flightsClimbed(),input.respiratoryRate(),input.oxygenSaturationPercent(),recordedAt));
   events.publishEvent(new HealthSnapshotCreatedEvent(saved));
   return saved;
  }
