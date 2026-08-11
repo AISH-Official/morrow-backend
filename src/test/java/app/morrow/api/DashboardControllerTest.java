@@ -63,6 +63,48 @@ class DashboardControllerTest {
    .andExpect(status().isUnauthorized());
  }
 
+ @Test void accountIdLoginKeepsThePhoneLinkAfterLoggingInAgain()throws Exception{
+  var firstLogin=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"subin","deviceId":"account-web-first","deviceName":"First Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.accessToken").isNotEmpty())
+   .andReturn();
+  var firstToken=objectMapper.readTree(firstLogin.getResponse().getContentAsString()).path("accessToken").asText();
+
+  var phone=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
+   {"deviceId":"account-phone","deviceName":"Linked iPhone","platform":"IOS"}
+   """))
+   .andExpect(status().isCreated()).andReturn();
+  var phoneCredentials=objectMapper.readTree(phone.getResponse().getContentAsString());
+  var phoneUserId=phoneCredentials.path("userId").asText();
+
+  mvc.perform(post("/api/v1/auth/pair")
+    .contentType(MediaType.APPLICATION_JSON)
+    .content(objectMapper.writeValueAsString(java.util.Map.of(
+     "pairingCode",phoneCredentials.path("pairingCode").asText(),"deviceId","code-only-login","deviceName","Code only","platform","WEB"
+    ))))
+   .andExpect(status().isUnauthorized());
+
+  var paired=mvc.perform(post("/api/v1/auth/pair")
+    .header("Authorization","Bearer "+firstToken)
+    .contentType(MediaType.APPLICATION_JSON)
+    .content(objectMapper.writeValueAsString(java.util.Map.of(
+     "pairingCode",phoneCredentials.path("pairingCode").asText(),"deviceId","account-web-first","deviceName","First Browser","platform","WEB"
+    ))))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(phoneUserId))
+   .andReturn();
+  var pairedToken=objectMapper.readTree(paired.getResponse().getContentAsString()).path("accessToken").asText();
+  mvc.perform(post("/api/v1/auth/logout").header("Authorization","Bearer "+pairedToken)).andExpect(status().isNoContent());
+
+  mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"subin","deviceId":"account-web-return","deviceName":"Returning Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(phoneUserId));
+ }
+
  @Test void nativeHealthSummaryFeedsWebDashboardAndIsIdempotent()throws Exception{
   var userId="native-health-user";
   var payload="""
@@ -74,6 +116,8 @@ class DashboardControllerTest {
   mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(refreshedPayload)).andExpect(status().isCreated());
   mvc.perform(get("/api/v1/dashboard").param("userId",userId))
    .andExpect(status().isOk())
+   .andExpect(jsonPath("$.score").value(80))
+   .andExpect(jsonPath("$.wellnessLoad").value("NORMAL"))
    .andExpect(jsonPath("$.metrics.sleepMinutes").value(392))
    .andExpect(jsonPath("$.metrics.steps").value(9345))
    .andExpect(jsonPath("$.metrics.activeEnergyKcal").value(402))
@@ -100,7 +144,7 @@ class DashboardControllerTest {
 
   mvc.perform(get("/api/v1/dashboard").param("userId",userId))
    .andExpect(status().isOk())
-   .andExpect(jsonPath("$.wellnessLoad").value("HIGHER_THAN_USUAL"))
+   .andExpect(jsonPath("$.wellnessLoad").value("MODERATE"))
    .andExpect(jsonPath("$.timeline[0].kind").value("CHECKIN"))
    .andExpect(jsonPath("$.timeline[0].userConfirmed").value(true))
    .andExpect(jsonPath("$.recommendation.title").value("7분 동안 가볍게 걸어보세요"));
@@ -189,6 +233,11 @@ class DashboardControllerTest {
  }
 
  @Test void devicePairingSharesOneUserAndBearerPreventsCrossUserAccess()throws Exception{
+  var account=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"pair-test","deviceId":"web-test-device","deviceName":"Test Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated()).andReturn();
+  var accountToken=objectMapper.readTree(account.getResponse().getContentAsString()).path("accessToken").asText();
   var phone=mvc.perform(post("/api/v1/auth/device").contentType(MediaType.APPLICATION_JSON).content("""
    {"deviceId":"ios-test-device","deviceName":"Test iPhone","platform":"IOS"}
    """))
@@ -199,7 +248,7 @@ class DashboardControllerTest {
   var userId=phoneCredentials.path("userId").asText();
   var pairingCode=phoneCredentials.path("pairingCode").asText();
 
-  var web=mvc.perform(post("/api/v1/auth/pair").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
+  var web=mvc.perform(post("/api/v1/auth/pair").header("Authorization","Bearer "+accountToken).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of(
    "pairingCode",pairingCode,"deviceId","web-test-device","deviceName","Test Browser","platform","WEB"
   ))))
    .andExpect(status().isCreated())
