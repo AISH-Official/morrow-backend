@@ -72,4 +72,30 @@ class PromptBuilderTest {
                 .contains("거리 6.45km")
                 .doesNotContain("아직 기록된 데이터가 없습니다");
     }
+
+    @Test
+    void keepsTheLatestStoredConversationInChronologicalPromptOrder() {
+        var builder = new PromptBuilder("Asia/Seoul");
+        var earlier = new AssistantMessage("chat-user", AssistantMessage.Role.USER, "내일 발표가 있어서 긴장돼", true);
+        var latest = new AssistantMessage("chat-user", AssistantMessage.Role.ASSISTANT, "발표 전에 짧게 호흡해 보세요", true);
+        var context = new UserContextCollector.UserContext(
+                "chat-user",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(latest, earlier),
+                List.of()
+        );
+
+        var prompt = builder.buildUserContextPrompt(context);
+
+        assertThat(prompt)
+                .contains("최근 대화:")
+                .contains("사용자: 내일 발표가 있어서 긴장돼")
+                .contains("AI: 발표 전에 짧게 호흡해 보세요");
+        assertThat(prompt.indexOf("사용자: 내일 발표가 있어서 긴장돼"))
+                .isLessThan(prompt.indexOf("AI: 발표 전에 짧게 호흡해 보세요"));
+    }
 }

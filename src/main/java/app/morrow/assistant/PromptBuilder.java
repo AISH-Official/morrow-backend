@@ -109,14 +109,18 @@ public class PromptBuilder {
             )));
         }
         if (!context.recentMessages().isEmpty()) {
-            sb.append("\n최근 대화 (24시간):\n");
-            context.recentMessages().stream().limit(6).forEach(message -> sb.append(String.format(
-                    "- %s: %s\n",
-                    message.getRole() == AssistantMessage.Role.USER ? "사용자" : "AI",
-                    message.getContent().length() > 100
-                            ? message.getContent().substring(0, 100) + "..."
-                            : message.getContent()
-            )));
+            sb.append("\n최근 대화:\n");
+            var messages = context.recentMessages().stream().limit(12).toList();
+            for (var index = messages.size() - 1; index >= 0; index--) {
+                var message = messages.get(index);
+                sb.append(String.format(
+                        "- %s: %s\n",
+                        message.getRole() == AssistantMessage.Role.USER ? "사용자" : "AI",
+                        message.getContent().length() > 100
+                                ? message.getContent().substring(0, 100) + "..."
+                                : message.getContent()
+                ));
+            }
         }
         if (context.recentHealthSnapshots().isEmpty()
                 && context.recentCheckIns().isEmpty()

@@ -30,8 +30,9 @@ public class AssistantService {
     }
 
     public AssistantReply sendMessage(String userId, String content) {
-        repository.save(new AssistantMessage(userId, AssistantMessage.Role.USER, content, true));
         var safetyCheck = safetyFilter.check(content);
+        var context = safetyCheck.blocked() ? null : contextCollector.collectContext(userId);
+        repository.save(new AssistantMessage(userId, AssistantMessage.Role.USER, content, true));
         String response;
         OpenAIClient.Mode mode;
         int evidenceCount = 0;
@@ -39,7 +40,6 @@ public class AssistantService {
             response = safetyCheck.responseOverride();
             mode = OpenAIClient.Mode.FALLBACK;
         } else {
-            var context = contextCollector.collectContext(userId);
             evidenceCount = context.memories().stream().mapToInt(value -> value.getEvidenceCount()).sum();
             var generated = openAIClient.generateResponse(
                     promptBuilder.buildSystemPrompt(),

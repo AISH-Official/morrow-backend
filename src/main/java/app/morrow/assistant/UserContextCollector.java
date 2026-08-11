@@ -57,10 +57,7 @@ public class UserContextCollector {
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);
         var recentTimelines = timelineRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(userId, weekAgo);
         var recentRecommendations = recommendationRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, weekAgo);
-        var recentMessages = messageRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(
-                userId,
-                OffsetDateTime.now().minusHours(24)
-        );
+        var recentMessages = messageRepository.findTop12ByUserIdOrderByCreatedAtDesc(userId);
         var feedbackSummary = recentRecommendations.stream()
                 .flatMap(recommendation -> feedbackRepository.findByRecommendationId(recommendation.getId()).stream())
                 .collect(Collectors.toList());
