@@ -39,6 +39,7 @@ public class AccountAuthService {
         var normalized = normalize(accountId);
         rateLimiter.check("login:" + normalized + ":" + deviceId);
         if (normalized.isBlank()) throw new InvalidAccountIdException("아이디를 입력해 주세요.");
+        if (!demoAccountId.isBlank() && demoAccountId.equals(normalized)) throw new PasswordLoginRequiredException();
         var account = accounts.findById(normalized).orElseGet(() -> accounts.save(new AccountLink(normalized, initialUserId(normalized))));
         if (account.hasPassword()) throw new PasswordLoginRequiredException();
         return devices.registerForUser(deviceId, deviceName, platform, account.getUserId());
@@ -65,7 +66,9 @@ public class AccountAuthService {
         var normalized = normalize(accountId);
         rateLimiter.check("password-login:" + normalized + ":" + deviceId);
         if (!demoAccountId.isBlank() && demoAccountId.equals(normalized)) {
-            return demoLogin.login(accountId, password, deviceId, deviceName, platform);
+            var credentials = demoLogin.login(accountId, password, deviceId, deviceName, platform);
+            ensureDemoAccountLink();
+            return credentials;
         }
         var account = accounts.findById(normalized).orElseThrow(InvalidCredentialsException::new);
         if (!account.hasPassword() || !passwords.matches(password, account.getPasswordHash())) {
@@ -107,7 +110,10 @@ public class AccountAuthService {
     public boolean aiHealthConsent(String userId) { return accounts.findByUserId(userId).map(AccountLink::isAiHealthConsent).orElse(false); }
 
     public boolean updateAiHealthConsent(String userId, boolean consent) {
-        var account = accounts.findByUserId(userId).orElseThrow(() -> new InvalidAccountIdException("연결된 계정을 찾을 수 없습니다."));
+        var account = accounts.findByUserId(userId).orElseGet(() -> {
+            if (!demoUserId.equals(userId)) throw new InvalidAccountIdException("연결된 계정을 찾을 수 없습니다.");
+            return ensureDemoAccountLink();
+        });
         account.setAiHealthConsent(consent);
         return consent;
     }
@@ -115,6 +121,14 @@ public class AccountAuthService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private AccountLink ensureDemoAccountLink() {
+        if (demoAccountId.isBlank()) throw new InvalidAccountIdException("데모 계정이 설정되지 않았습니다.");
+        var existing = accounts.findById(demoAccountId).orElse(null);
+        if (existing == null) return accounts.save(new AccountLink(demoAccountId, demoUserId));
+        if (!demoUserId.equals(existing.getUserId())) throw new AccountAlreadyLinkedException("데모 아이디가 다른 사용자에게 연결되어 있습니다.");
+        return existing;
     }
 
     public static class InvalidAccountIdException extends RuntimeException {

@@ -19,11 +19,10 @@ public class DeviceAuthService {
 
     public DeviceAuthService(DeviceSessionRepository repository) { this.repository = repository; }
 
-    public Credentials register(String deviceId, String deviceName, DeviceSession.Platform platform, String requestedUserId) {
+    public Credentials register(String deviceId, String deviceName, DeviceSession.Platform platform) {
         var existing = repository.findByDeviceId(deviceId).orElse(null);
-        var userId = existing != null ? existing.getUserId() : normalizeUserId(requestedUserId);
-        if (userId == null) userId = "user-" + UUID.randomUUID();
-        return saveRotated(existing, deviceId, deviceName, platform, userId);
+        if (existing != null) throw new DeviceAlreadyRegisteredException("이미 등록된 기기입니다. 계정으로 로그인해 주세요.");
+        return saveRotated(null, deviceId, deviceName, platform, "user-" + UUID.randomUUID());
     }
 
     public Credentials registerForUser(String deviceId, String deviceName, DeviceSession.Platform platform, String userId) {
@@ -126,5 +125,6 @@ public class DeviceAuthService {
     public record LoggedOutSession(String userId, DeviceSession.Platform platform) {}
     public record DeviceInfo(UUID id, String deviceId, String deviceName, DeviceSession.Platform platform, java.time.OffsetDateTime lastSeenAt) {}
     public static class InvalidPairingCodeException extends RuntimeException { public InvalidPairingCodeException(String message) { super(message); } }
+    public static class DeviceAlreadyRegisteredException extends RuntimeException { public DeviceAlreadyRegisteredException(String message) { super(message); } }
     public static class DeviceNotFoundException extends RuntimeException { public DeviceNotFoundException(UUID id) { super("Device not found: " + id); } }
 }
