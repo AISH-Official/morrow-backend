@@ -91,6 +91,43 @@ jobs:
 
           ssh ec2-user@"$EC2_HOST" \
             'sudo mkdir -p /etc/systemd/system/morrow-api.service.d && printf "%s\n" "[Service]" "EnvironmentFile=-/etc/morrow-openai.env" | sudo tee /etc/systemd/system/morrow-api.service.d/openai.conf >/dev/null && sudo systemctl daemon-reload'
+      - name: Sync APNs runtime secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          APNS_ENABLED: ${{ secrets.APNS_ENABLED }}
+          APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
+          APNS_IOS_TOPIC: ${{ secrets.APNS_IOS_TOPIC }}
+          APNS_WATCH_TOPIC: ${{ secrets.APNS_WATCH_TOPIC }}
+        run: |
+          case "$APNS_ENABLED" in
+            true|false) ;;
+            *) echo "APNS_ENABLED must be true or false" >&2; exit 1 ;;
+          esac
+          test -n "$APNS_TEAM_ID"
+          test -n "$APNS_KEY_ID"
+          test -n "$APNS_PRIVATE_KEY"
+          test -n "$APNS_IOS_TOPIC"
+          test -n "$APNS_WATCH_TOPIC"
+          case "$APNS_PRIVATE_KEY" in
+            *"-----BEGIN PRIVATE KEY-----"*"-----END PRIVATE KEY-----"*) ;;
+            *) echo "APNS_PRIVATE_KEY must be a PKCS#8 PEM key" >&2; exit 1 ;;
+          esac
+
+          escaped_private_key="${APNS_PRIVATE_KEY//$'\n'/\\n}"
+          {
+            printf 'APNS_ENABLED=%s\n' "$APNS_ENABLED"
+            printf 'APNS_TEAM_ID=%s\n' "$APNS_TEAM_ID"
+            printf 'APNS_KEY_ID=%s\n' "$APNS_KEY_ID"
+            printf "APNS_PRIVATE_KEY='%s'\n" "$escaped_private_key"
+            printf 'APNS_IOS_TOPIC=%s\n' "$APNS_IOS_TOPIC"
+            printf 'APNS_WATCH_TOPIC=%s\n' "$APNS_WATCH_TOPIC"
+          } | ssh ec2-user@"$EC2_HOST" \
+            'sudo tee /etc/morrow-apns.env >/dev/null && sudo chmod 600 /etc/morrow-apns.env'
+
+          ssh ec2-user@"$EC2_HOST" \
+            'sudo mkdir -p /etc/systemd/system/morrow-api.service.d && printf "%s\n" "[Service]" "EnvironmentFile=-/etc/morrow-apns.env" | sudo tee /etc/systemd/system/morrow-api.service.d/apns.conf >/dev/null && sudo systemctl daemon-reload'
       - name: Upload release
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
