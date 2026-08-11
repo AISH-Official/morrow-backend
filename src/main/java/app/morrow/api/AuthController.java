@@ -45,6 +45,16 @@ public class AuthController {
         return CredentialsResponse.from(accountAuth.login(request.accountId(), request.deviceId(), request.deviceName(), request.platform()));
     }
 
+    @PostMapping("/signup") @ResponseStatus(HttpStatus.CREATED)
+    CredentialsResponse signup(@Valid @RequestBody PasswordAccountRequest request) {
+        return CredentialsResponse.from(accountAuth.signup(request.accountId(), request.password(), request.deviceId(), request.deviceName(), request.platform()));
+    }
+
+    @PostMapping("/account-login") @ResponseStatus(HttpStatus.CREATED)
+    CredentialsResponse accountLogin(@Valid @RequestBody PasswordAccountRequest request) {
+        return CredentialsResponse.from(accountAuth.loginWithPassword(request.accountId(), request.password(), request.deviceId(), request.deviceName(), request.platform()));
+    }
+
     @PostMapping("/login") @ResponseStatus(HttpStatus.CREATED)
     CredentialsResponse login(@Valid @RequestBody LoginRequest request) {
         return CredentialsResponse.from(demoLogin.login(
@@ -89,6 +99,15 @@ public class AuthController {
     @ExceptionHandler(AccountAuthService.AccountAlreadyLinkedException.class) @ResponseStatus(HttpStatus.CONFLICT)
     ErrorResponse alreadyLinked(AccountAuthService.AccountAlreadyLinkedException error) { return new ErrorResponse(error.getMessage()); }
 
+    @ExceptionHandler(AccountAuthService.AccountAlreadyExistsException.class) @ResponseStatus(HttpStatus.CONFLICT)
+    ErrorResponse accountExists(AccountAuthService.AccountAlreadyExistsException error) { return new ErrorResponse(error.getMessage()); }
+
+    @ExceptionHandler(AccountAuthService.InvalidCredentialsException.class) @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ErrorResponse invalidAccountCredentials(AccountAuthService.InvalidCredentialsException error) { return new ErrorResponse(error.getMessage()); }
+
+    @ExceptionHandler(AccountAuthService.PasswordLoginRequiredException.class) @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ErrorResponse passwordRequired(AccountAuthService.PasswordLoginRequiredException error) { return new ErrorResponse(error.getMessage()); }
+
     @ExceptionHandler(AccountAuthService.AccountLoginRequiredException.class) @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ErrorResponse accountLoginRequired(AccountAuthService.AccountLoginRequiredException error) { return new ErrorResponse(error.getMessage()); }
 
@@ -104,6 +123,7 @@ public class AuthController {
     record RegisterRequest(@NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform, @Size(max=100) String userId) {}
     record PairRequest(@NotBlank @Size(max=8) String pairingCode, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}
     record AccountLoginRequest(@NotBlank @Size(max=80) String accountId, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}
+    record PasswordAccountRequest(@NotBlank @Size(min=2,max=80) String accountId, @NotBlank @Size(min=8,max=120) String password, @NotBlank @Size(max=160) String deviceId, @NotBlank @Size(max=120) String deviceName, @NotNull DeviceSession.Platform platform) {}
     record LoginRequest(@NotBlank @Size(max=80) String username,@NotBlank @Size(max=120) String password,@NotBlank @Size(max=160) String deviceId,@NotBlank @Size(max=120) String deviceName,@NotNull DeviceSession.Platform platform) {}
     record CredentialsResponse(String userId, String accessToken, String pairingCode, String deviceId, String platform) {
         static CredentialsResponse from(DeviceAuthService.Credentials value) { return new CredentialsResponse(value.userId(), value.accessToken(), value.pairingCode(), value.deviceId(), value.platform().name()); }

@@ -16,14 +16,20 @@ public class AccountLink {
     @Column(name = "user_id", nullable = false, length = 100) private String userId;
     @Column(name = "linked_at", nullable = false) private OffsetDateTime linkedAt;
     @Column(name = "ai_health_consent") private Boolean aiHealthConsent;
+    @Column(name = "password_hash", length = 512) private String passwordHash;
 
     protected AccountLink() {}
 
     AccountLink(String accountId, String userId) {
+        this(accountId, userId, null);
+    }
+
+    AccountLink(String accountId, String userId, String passwordHash) {
         this.accountId = accountId;
         this.userId = userId;
         this.linkedAt = OffsetDateTime.now();
         this.aiHealthConsent = false;
+        this.passwordHash = passwordHash;
     }
 
     void linkTo(String userId) {
@@ -34,6 +40,9 @@ public class AccountLink {
     public String getAccountId() { return accountId; }
     public String getUserId() { return userId; }
     public OffsetDateTime getLinkedAt() { return linkedAt; }
+    public String getPasswordHash() { return passwordHash; }
+    public boolean hasPassword() { return passwordHash != null && !passwordHash.isBlank(); }
+    void setPasswordHash(String value) { this.passwordHash = value; }
     public boolean isAiHealthConsent() { return Boolean.TRUE.equals(aiHealthConsent); }
     public void setAiHealthConsent(boolean value) { this.aiHealthConsent = value; }
 }
