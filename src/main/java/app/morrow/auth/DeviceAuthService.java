@@ -35,15 +35,18 @@ public class DeviceAuthService {
 
     public Credentials pair(String pairingCode, String deviceId, String deviceName, DeviceSession.Platform platform) {
         var owner = repository.findByPairingCode(normalizeCode(pairingCode))
+                .filter(DeviceSession::isPairingCodeValid)
                 .orElseThrow(() -> new InvalidPairingCodeException("유효하지 않은 연결 코드입니다."));
         var existing = repository.findByDeviceId(deviceId).orElse(null);
         return saveRotated(existing, deviceId, deviceName, platform, owner.getUserId());
     }
 
-    @Transactional(readOnly = true)
     public String authenticate(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) return null;
-        return repository.findByTokenHash(hash(rawToken)).map(DeviceSession::getUserId).orElse(null);
+        var session = repository.findByTokenHash(hash(rawToken)).orElse(null);
+        if (session == null) return null;
+        if (session.getLastSeenAt().isBefore(java.time.OffsetDateTime.now().minusMinutes(5))) session.touch();
+        return session.getUserId();
     }
 
     public LoggedOutSession logout(String rawToken) {
@@ -55,15 +58,25 @@ public class DeviceAuthService {
         return result;
     }
 
-    public Credentials refreshPairingCode(String userId, String deviceId) {
+    public Credentials refreshPairingCode(String userId, String deviceId, String rawToken) {
         var session = repository.findByDeviceId(deviceId)
                 .filter(value -> value.getUserId().equals(userId))
                 .orElseThrow(() -> new InvalidPairingCodeException("기기를 찾을 수 없습니다."));
-        var token = newToken();
         var code = uniquePairingCode();
-        session.rotate(session.getDeviceName(), session.getPlatform(), hash(token), code, userId);
-        return credentials(session, token);
+        session.refreshPairingCode(code);
+        return credentials(session, rawToken);
     }
+
+    @Transactional(readOnly = true)
+    public java.util.List<DeviceInfo> devices(String userId) {
+        return repository.findByUserIdOrderByLastSeenAtDesc(userId).stream().map(value -> new DeviceInfo(value.getId(), value.getDeviceId(), value.getDeviceName(), value.getPlatform(), value.getLastSeenAt())).toList();
+    }
+
+    public void revokeDevice(String userId, UUID id) {
+        var value = repository.findById(id).filter(item -> item.getUserId().equals(userId)).orElseThrow(() -> new DeviceNotFoundException(id));
+        repository.delete(value);
+    }
+    public void revokeAll(String userId) { repository.deleteByUserId(userId); }
 
     private Credentials saveRotated(DeviceSession existing, String deviceId, String deviceName, DeviceSession.Platform platform, String userId) {
         var token = newToken();
@@ -111,5 +124,7 @@ public class DeviceAuthService {
 
     public record Credentials(String userId, String accessToken, String pairingCode, String deviceId, DeviceSession.Platform platform) {}
     public record LoggedOutSession(String userId, DeviceSession.Platform platform) {}
+    public record DeviceInfo(UUID id, String deviceId, String deviceName, DeviceSession.Platform platform, java.time.OffsetDateTime lastSeenAt) {}
     public static class InvalidPairingCodeException extends RuntimeException { public InvalidPairingCodeException(String message) { super(message); } }
+    public static class DeviceNotFoundException extends RuntimeException { public DeviceNotFoundException(UUID id) { super("Device not found: " + id); } }
 }

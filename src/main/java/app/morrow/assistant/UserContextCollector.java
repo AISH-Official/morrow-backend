@@ -11,6 +11,7 @@ import app.morrow.recommendation.RecommendationFeedbackRepository;
 import app.morrow.recommendation.RecommendationRepository;
 import app.morrow.timeline.Timeline;
 import app.morrow.timeline.TimelineRepository;
+import app.morrow.auth.AccountAuthService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,7 @@ public class UserContextCollector {
     private final AssistantMessageRepository messageRepository;
     private final PersonalizationService personalizationService;
     private final boolean includeHealthData;
+    private final AccountAuthService accounts;
 
     public UserContextCollector(
             HealthSignalSnapshotRepository healthSnapshotRepository,
@@ -37,6 +39,7 @@ public class UserContextCollector {
             RecommendationFeedbackRepository feedbackRepository,
             AssistantMessageRepository messageRepository,
             PersonalizationService personalizationService,
+            AccountAuthService accounts,
             @Value("${morrow.assistant.include-health-data:false}") boolean includeHealthData
     ) {
         this.healthSnapshotRepository = healthSnapshotRepository;
@@ -46,18 +49,19 @@ public class UserContextCollector {
         this.feedbackRepository = feedbackRepository;
         this.messageRepository = messageRepository;
         this.personalizationService = personalizationService;
+        this.accounts = accounts;
         this.includeHealthData = includeHealthData;
     }
 
     public UserContext collectContext(String userId) {
         var weekAgo = OffsetDateTime.now().minusDays(7);
-        var recentHealthSnapshots = includeHealthData
+        var recentHealthSnapshots = includeHealthData && accounts.aiHealthConsent(userId)
                 ? healthSnapshotRepository.findTop12ByUserIdOrderByRecordedAtDesc(userId)
                 : List.<HealthSignalSnapshot>of();
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);
         var recentTimelines = timelineRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(userId, weekAgo);
         var recentRecommendations = recommendationRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, weekAgo);
-        var recentMessages = messageRepository.findTop12ByUserIdOrderByCreatedAtDesc(userId);
+        var recentMessages = messageRepository.findTop24ByUserIdOrderByCreatedAtDesc(userId);
         var feedbackSummary = recentRecommendations.stream()
                 .flatMap(recommendation -> feedbackRepository.findByRecommendationId(recommendation.getId()).stream())
                 .collect(Collectors.toList());

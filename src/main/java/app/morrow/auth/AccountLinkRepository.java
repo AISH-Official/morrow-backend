@@ -5,4 +5,5 @@ import java.util.Optional;
 
 public interface AccountLinkRepository extends JpaRepository<AccountLink, String> {
     Optional<AccountLink> findByUserId(String userId);
+    void deleteByUserId(String userId);
 }

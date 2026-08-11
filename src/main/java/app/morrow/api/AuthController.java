@@ -4,6 +4,7 @@ import app.morrow.auth.DeviceAuthService;
 import app.morrow.auth.DeviceSession;
 import app.morrow.auth.DemoLoginService;
 import app.morrow.auth.AccountAuthService;
+import app.morrow.auth.AuthRateLimiter;
 import app.morrow.notification.PushNotificationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -11,6 +12,9 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import java.util.UUID;
+import java.time.OffsetDateTime;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -50,10 +54,27 @@ public class AuthController {
 
     @PostMapping("/logout") @ResponseStatus(HttpStatus.NO_CONTENT)
     void logout(@RequestHeader(value = "Authorization", required = false) String authorization) {
-        var session = service.logout(bearerToken(authorization));
-        if (session != null && session.platform() != DeviceSession.Platform.WEB) {
-            notifications.unregisterAll(session.userId());
-        }
+        service.logout(bearerToken(authorization));
+    }
+
+    @PostMapping("/pairing-code")
+    CredentialsResponse refreshPairingCode(@RequestHeader("Authorization") String authorization, @RequestParam String deviceId) {
+        var userId = service.authenticate(bearerToken(authorization));
+        if (userId == null) throw new AccountAuthService.AccountLoginRequiredException("로그인이 필요합니다.");
+        return CredentialsResponse.from(service.refreshPairingCode(userId, deviceId, bearerToken(authorization)));
+    }
+
+    @GetMapping("/devices") List<DeviceInfoResponse> devices(@RequestHeader("Authorization") String authorization) {
+        var userId = service.authenticate(bearerToken(authorization));
+        if (userId == null) throw new AccountAuthService.AccountLoginRequiredException("로그인이 필요합니다.");
+        return service.devices(userId).stream().map(DeviceInfoResponse::from).toList();
+    }
+
+    @DeleteMapping("/devices/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    void revokeDevice(@PathVariable UUID id, @RequestHeader("Authorization") String authorization) {
+        var userId = service.authenticate(bearerToken(authorization));
+        if (userId == null) throw new AccountAuthService.AccountLoginRequiredException("로그인이 필요합니다.");
+        service.revokeDevice(userId, id);
     }
 
     @ExceptionHandler(DeviceAuthService.InvalidPairingCodeException.class) @ResponseStatus(HttpStatus.NOT_FOUND)
@@ -71,6 +92,9 @@ public class AuthController {
     @ExceptionHandler(AccountAuthService.AccountLoginRequiredException.class) @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ErrorResponse accountLoginRequired(AccountAuthService.AccountLoginRequiredException error) { return new ErrorResponse(error.getMessage()); }
 
+    @ExceptionHandler(AuthRateLimiter.TooManyAttemptsException.class) @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    ErrorResponse tooManyAttempts(AuthRateLimiter.TooManyAttemptsException error) { return new ErrorResponse(error.getMessage()); }
+
     private String bearerToken(String authorization) {
         return authorization != null && authorization.startsWith("Bearer ")
                 ? authorization.substring(7).trim()
@@ -84,5 +108,6 @@ public class AuthController {
     record CredentialsResponse(String userId, String accessToken, String pairingCode, String deviceId, String platform) {
         static CredentialsResponse from(DeviceAuthService.Credentials value) { return new CredentialsResponse(value.userId(), value.accessToken(), value.pairingCode(), value.deviceId(), value.platform().name()); }
     }
+    record DeviceInfoResponse(UUID id,String deviceId,String deviceName,String platform,OffsetDateTime lastSeenAt){static DeviceInfoResponse from(DeviceAuthService.DeviceInfo value){return new DeviceInfoResponse(value.id(),value.deviceId(),value.deviceName(),value.platform().name(),value.lastSeenAt());}}
     record ErrorResponse(String message) {}
 }

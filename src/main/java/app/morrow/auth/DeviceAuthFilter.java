@@ -23,7 +23,10 @@ public class DeviceAuthFilter extends OncePerRequestFilter {
 
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         var path = request.getRequestURI();
-        return path.startsWith("/api/v1/auth/") || path.startsWith("/actuator/") || "OPTIONS".equals(request.getMethod());
+        var publicAuth = path.equals("/api/v1/auth/device") || path.equals("/api/v1/auth/pair")
+                || path.equals("/api/v1/auth/account") || path.equals("/api/v1/auth/login")
+                || path.equals("/api/v1/auth/logout") || path.equals("/api/v1/auth/pairing-code");
+        return publicAuth || path.startsWith("/actuator/") || "OPTIONS".equals(request.getMethod());
     }
 
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {

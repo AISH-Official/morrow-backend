@@ -15,6 +15,7 @@ public class AccountLink {
     @Id @Column(name = "account_id", length = 80) private String accountId;
     @Column(name = "user_id", nullable = false, length = 100) private String userId;
     @Column(name = "linked_at", nullable = false) private OffsetDateTime linkedAt;
+    @Column(name = "ai_health_consent") private Boolean aiHealthConsent;
 
     protected AccountLink() {}
 
@@ -22,6 +23,7 @@ public class AccountLink {
         this.accountId = accountId;
         this.userId = userId;
         this.linkedAt = OffsetDateTime.now();
+        this.aiHealthConsent = false;
     }
 
     void linkTo(String userId) {
@@ -32,4 +34,6 @@ public class AccountLink {
     public String getAccountId() { return accountId; }
     public String getUserId() { return userId; }
     public OffsetDateTime getLinkedAt() { return linkedAt; }
+    public boolean isAiHealthConsent() { return Boolean.TRUE.equals(aiHealthConsent); }
+    public void setAiHealthConsent(boolean value) { this.aiHealthConsent = value; }
 }

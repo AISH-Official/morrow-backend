@@ -5,6 +5,6 @@ import java.util.List;
 import java.util.UUID;
 public interface AssistantMessageRepository extends JpaRepository<AssistantMessage, UUID> {
  List<AssistantMessage> findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(String userId,OffsetDateTime after);
- List<AssistantMessage> findTop12ByUserIdOrderByCreatedAtDesc(String userId);
+ List<AssistantMessage> findTop24ByUserIdOrderByCreatedAtDesc(String userId);
  void deleteByUserId(String userId);
 }

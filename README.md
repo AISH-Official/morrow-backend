@@ -100,6 +100,7 @@ POST /auth/device
 POST /auth/pair
   → iPhone의 pairing code로 Watch 또는 Web 연결
   → 모든 기기가 같은 userId 사용
+  → 연결 코드는 10분 동안만 유효하며 연결된 기기는 개별 해제 가능
 
 POST /auth/logout
   → 현재 기기의 device session 삭제
@@ -192,6 +193,7 @@ Watch / iPhone / Web 체크인
 | `PATCH/DELETE` | `/personalization/memories/{id}` | 메모리 수정·삭제 |
 | `POST` | `/personalization/rebuild` | 기록으로 자동 학습 메모리 재구성 |
 | `POST/GET` | `/assistant/messages` | AI 대화 생성·이력 조회 |
+| `DELETE` | `/assistant/messages` | AI 대화 기억만 삭제 |
 | `POST` | `/assistant/proactive-insight` | 최근 건강·체크인 흐름 기반 AI 알림 필요 여부와 문구 생성 |
 | `GET` | `/assistant/status` | OpenAI 활성·키·모델 준비 상태 확인 |
 | `POST` | `/auth/login` | 해커톤 데모 계정 로그인 후 기기 Bearer 세션 발급 |
@@ -200,6 +202,10 @@ Watch / iPhone / Web 체크인
 | `POST` | `/notifications/test` | 사용자 기기로 테스트 알림 전송 |
 | `GET` | `/notifications/status` | APNs 설정과 활성 기기 상태 조회 |
 | `DELETE` | `/users/me/data` | 사용자 웰니스 데이터 전체 삭제 |
+| `DELETE` | `/users/me/account` | 계정·기기 연결·전체 데이터 완전 삭제 |
+| `GET` | `/auth/devices` | 현재 계정에 연결된 기기 조회 |
+| `DELETE` | `/auth/devices/{id}` | 특정 기기 연결 해제 |
+| `GET/PATCH` | `/privacy/ai-health-consent` | AI 건강 요약 사용 동의 조회·변경 |
 
 상세 요청·응답은 [API 계약](https://github.com/AISH-Official/morrow-docs/blob/main/docs/api.md)을 참고하세요.
 

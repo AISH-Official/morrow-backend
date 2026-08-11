@@ -110,7 +110,7 @@ public class PromptBuilder {
         }
         if (!context.recentMessages().isEmpty()) {
             sb.append("\n최근 대화:\n");
-            var messages = context.recentMessages().stream().limit(12).toList();
+            var messages = context.recentMessages().stream().limit(24).toList();
             for (var index = messages.size() - 1; index >= 0; index--) {
                 var message = messages.get(index);
                 sb.append(String.format(
@@ -136,8 +136,10 @@ public class PromptBuilder {
                 당신은 Morrow의 선제적 웰니스 알림 판단기입니다.
                 최근 건강 요약, 체크인, 개인화 메모리를 보고 지금 알림이 실제로 도움이 되는지 판단합니다.
                 - 변화가 의미 없거나 데이터가 부족하거나 같은 조언을 반복하게 되면 정확히 SKIP만 출력합니다.
-                - 알림이 필요하면 사용자가 바로 실행할 수 있는 자연스러운 한국어 한 문장만 출력합니다.
-                - 70자 이내로 쓰고 큰따옴표, 제목, 목록, 진단, 공포를 유발하는 표현을 사용하지 않습니다.
+                - 알림이 필요하면 질문만 하지 말고 사용자가 지금 즉시 실행할 한 가지 행동을 제안합니다.
+                - 물 한 잔, 1분 호흡, 3분 스트레칭, 5분 걷기, 10분 집중, 잠시 화면 끄기처럼 짧고 구체적인 행동을 상황에 맞게 다양하게 고릅니다.
+                - 같은 행동과 같은 문구를 반복하지 않습니다.
+                - 70자 이내의 자연스러운 한국어 한 문장으로 쓰고 큰따옴표, 제목, 목록, 진단, 공포를 유발하는 표현을 사용하지 않습니다.
                 - 단일 생체 측정값으로 상태를 단정하지 않고, 과도한 운동이나 치료·약물 변경을 권하지 않습니다.
                 - 최근 대화보다 Watch와 iPhone의 최신 측정 시각과 사용자가 직접 남긴 체크인을 우선합니다.
                 """;

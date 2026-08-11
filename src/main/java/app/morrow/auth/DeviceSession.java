@@ -22,6 +22,7 @@ public class DeviceSession {
     @Column(name = "pairing_code", nullable = false, length = 8) private String pairingCode;
     @Column(name = "created_at", nullable = false) private OffsetDateTime createdAt;
     @Column(name = "last_seen_at", nullable = false) private OffsetDateTime lastSeenAt;
+    @Column(name = "pairing_code_expires_at") private OffsetDateTime pairingCodeExpiresAt;
 
     protected DeviceSession() {}
 
@@ -35,6 +36,7 @@ public class DeviceSession {
         this.pairingCode = pairingCode;
         this.createdAt = OffsetDateTime.now();
         this.lastSeenAt = this.createdAt;
+        this.pairingCodeExpiresAt = this.createdAt.plusMinutes(10);
     }
 
     void rotate(String deviceName, Platform platform, String tokenHash, String pairingCode, String userId) {
@@ -44,9 +46,11 @@ public class DeviceSession {
         this.pairingCode = pairingCode;
         this.userId = userId;
         this.lastSeenAt = OffsetDateTime.now();
+        this.pairingCodeExpiresAt = this.lastSeenAt.plusMinutes(10);
     }
 
     void touch() { this.lastSeenAt = OffsetDateTime.now(); }
+    void refreshPairingCode(String value) { this.pairingCode = value; this.pairingCodeExpiresAt = OffsetDateTime.now().plusMinutes(10); this.lastSeenAt = OffsetDateTime.now(); }
 
     public UUID getId() { return id; }
     public String getDeviceId() { return deviceId; }
@@ -56,6 +60,8 @@ public class DeviceSession {
     public String getPairingCode() { return pairingCode; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getLastSeenAt() { return lastSeenAt; }
+    public OffsetDateTime getPairingCodeExpiresAt() { return pairingCodeExpiresAt; }
+    public boolean isPairingCodeValid() { return pairingCodeExpiresAt != null && pairingCodeExpiresAt.isAfter(OffsetDateTime.now()); }
 
     public enum Platform { IOS, WATCHOS, WEB }
 }

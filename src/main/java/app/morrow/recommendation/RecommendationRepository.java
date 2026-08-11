@@ -8,5 +8,6 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
  Optional<Recommendation> findFirstByUserIdAndStatusOrderByCreatedAtDesc(String userId,Recommendation.Status status);
  List<Recommendation> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(String userId,OffsetDateTime after);
  List<Recommendation> findByUserId(String userId);
+ List<Recommendation> findByUserIdAndCheckInId(String userId,UUID checkInId);
  void deleteByUserId(String userId);
 }

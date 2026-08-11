@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import app.morrow.auth.AuthRateLimiter;
 
 @Service
 @Transactional
@@ -14,22 +15,26 @@ public class AssistantService {
     private final PromptBuilder promptBuilder;
     private final SafetyFilter safetyFilter;
     private final OpenAIClient openAIClient;
+    private final AuthRateLimiter rateLimiter;
 
     public AssistantService(
             AssistantMessageRepository repository,
             UserContextCollector contextCollector,
             PromptBuilder promptBuilder,
             SafetyFilter safetyFilter,
-            OpenAIClient openAIClient
+            OpenAIClient openAIClient,
+            AuthRateLimiter rateLimiter
     ) {
         this.repository = repository;
         this.contextCollector = contextCollector;
         this.promptBuilder = promptBuilder;
         this.safetyFilter = safetyFilter;
         this.openAIClient = openAIClient;
+        this.rateLimiter = rateLimiter;
     }
 
     public AssistantReply sendMessage(String userId, String content) {
+        rateLimiter.check("assistant:" + userId, 20);
         var safetyCheck = safetyFilter.check(content);
         var context = safetyCheck.blocked() ? null : contextCollector.collectContext(userId);
         repository.save(new AssistantMessage(userId, AssistantMessage.Role.USER, content, true));
@@ -74,12 +79,23 @@ public class AssistantService {
         if (content.length() > 100) {
             content = content.substring(0, 100).strip();
         }
-        return new ProactiveInsight(true, "Morrow AI 인사이트", content, generated.mode(), "RECENT_WELLNESS_CONTEXT");
+        return new ProactiveInsight(true, actionTitle(content), content, generated.mode(), "RECENT_WELLNESS_CONTEXT");
+    }
+
+    private String actionTitle(String content) {
+        if (content.contains("호흡") || content.contains("숨")) return "지금 1분 호흡해요";
+        if (content.contains("걷") || content.contains("산책")) return "지금 잠깐 걸어볼까요?";
+        if (content.contains("물")) return "지금 물 한 잔 어때요?";
+        if (content.contains("스트레칭") || content.contains("어깨")) return "지금 몸을 가볍게 풀어요";
+        if (content.contains("집중")) return "지금 짧게 시작해 볼까요?";
+        return "지금 바로 해볼 한 가지";
     }
 
     public List<AssistantMessage> getHistory(String userId, OffsetDateTime after) {
         return repository.findByUserIdAndCreatedAtAfterOrderByCreatedAtAsc(userId, after);
     }
+
+    public void deleteConversation(String userId) { repository.deleteByUserId(userId); }
 
     public OpenAIClient.Status status() {
         return openAIClient.status();

@@ -16,7 +16,7 @@ public class HealthPushListener {
     public void onSnapshot(HealthSignalSnapshotService.HealthSnapshotCreatedEvent event) {
         var snapshot = event.snapshot();
         var load = 100 - recoveryScores.healthScore(snapshot);
-        if (load >= 70) notifications.sendRecoveryAlert(snapshot.getUserId(), load);
+        if (load >= 55) notifications.sendActionableRecoveryAlert(snapshot, load);
     }
 
 }

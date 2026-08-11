@@ -25,6 +25,7 @@ public class HealthSignalSnapshotService{
  }
  @Transactional(readOnly=true) public java.util.Optional<HealthSignalSnapshot> latest(String userId){return repository.findFirstByUserIdOrderByRecordedAtDesc(userId);}
  @Transactional(readOnly=true) public java.util.Optional<HealthSignalSnapshot> latest(String userId,HealthSignalSnapshot.Source source){return repository.findFirstByUserIdAndSourceOrderByRecordedAtDesc(userId,source);}
+ @Transactional(readOnly=true) public java.util.List<HealthSignalSnapshot> recent(String userId){return repository.findTop12ByUserIdOrderByRecordedAtDesc(userId);}
  public record CreateSnapshot(String userId,String clientSnapshotId,HealthSignalSnapshot.Source source,Integer sleepMinutes,Double heartRate,Double restingHeartRate,Double hrv,Double steps,Double activeEnergyKcal,Double exerciseMinutes,Double distanceMeters,Double flightsClimbed,Double respiratoryRate,Double oxygenSaturationPercent,OffsetDateTime recordedAt){}
  public record HealthSnapshotCreatedEvent(HealthSignalSnapshot snapshot){}
 }

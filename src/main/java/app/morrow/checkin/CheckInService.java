@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.List;
 
 @Service @Transactional
 public class CheckInService {
@@ -36,12 +37,21 @@ public class CheckInService {
   timelineService.create(new TimelineService.CreateTimeline(userId,localTime,"상태 체크인",timelineDetail(checkIn),Timeline.Kind.CHECKIN,true,recordedAt));
   var recommendation=recommendationFor(checkIn);
   var personalized=personalizationService.personalizeAction(userId,checkIn.getStatus(),recommendation.title(),recommendation.rationale());
-  recommendationService.create(new RecommendationService.CreateRecommendation(userId,personalized.title(),personalized.rationale(),Recommendation.Status.ACTIVE));
+  recommendationService.create(new RecommendationService.CreateRecommendation(userId,personalized.title(),personalized.rationale(),Recommendation.Status.ACTIVE,checkIn.getId()));
   personalizationService.learnFromCheckIn(checkIn);
   return checkIn;
  }
 
- public void delete(UUID id){repository.deleteById(id);}
+ @Transactional(readOnly=true)
+ public List<CheckIn> findAll(String userId){return repository.findByUserIdOrderByRecordedAtAsc(userId);}
+
+ public void delete(UUID id,String userId){
+  var value=repository.findById(id).filter(item->item.getUserId().equals(userId)).orElseThrow(()->new CheckInNotFoundException(id));
+  timelineService.deleteForCheckIn(userId,value.getRecordedAt());
+  recommendationService.deleteForCheckIn(userId,id);
+  repository.delete(value);
+  personalizationService.rebuild(userId);
+ }
  public void deleteAll(String userId){repository.deleteByUserId(userId);}
 
  private String timelineDetail(CheckIn value){
@@ -69,4 +79,5 @@ public class CheckInService {
   public CreateCheckIn(String userId,CheckIn.Status status,CheckIn.Cause cause,String note,CheckIn.Source source,OffsetDateTime recordedAt){this(userId,null,status,cause,note,source,recordedAt);}
  }
  private record SuggestedAction(String title,String rationale){}
+ public static class CheckInNotFoundException extends RuntimeException{public CheckInNotFoundException(UUID id){super("Check-in not found: "+id);}}
 }
