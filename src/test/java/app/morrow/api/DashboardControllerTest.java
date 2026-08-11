@@ -63,6 +63,62 @@ class DashboardControllerTest {
    .andExpect(status().isUnauthorized());
  }
 
+ @Test void signupCreatesIsolatedAccountAndPasswordLoginKeepsItsUser()throws Exception{
+  var signup=mvc.perform(post("/api/v1/auth/signup").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"new-member","password":"healthy1234","deviceId":"signup-web","deviceName":"Signup Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(org.hamcrest.Matchers.startsWith("account-")))
+   .andReturn();
+  var userId=objectMapper.readTree(signup.getResponse().getContentAsString()).path("userId").asText();
+
+  mvc.perform(post("/api/v1/auth/account-login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"new-member","password":"healthy1234","deviceId":"login-web","deviceName":"Returning Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(userId));
+
+  mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"new-member","deviceId":"legacy-bypass","deviceName":"Old Client","platform":"WEB"}
+   """))
+   .andExpect(status().isUnauthorized());
+
+  mvc.perform(post("/api/v1/auth/account-login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"new-member","password":"wrong-password","deviceId":"wrong-web","deviceName":"Wrong Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isUnauthorized());
+
+  mvc.perform(post("/api/v1/auth/signup").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"new-member","password":"another1234","deviceId":"duplicate-web","deviceName":"Duplicate Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isConflict());
+
+  mvc.perform(post("/api/v1/auth/account-login").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"사용자","password":"morrow1234","deviceId":"demo-new-login","deviceName":"Demo Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value("hackathon-demo"));
+ }
+
+ @Test void existingPasswordlessAccountCanBecomeARegisteredAccountWithoutLosingItsUser()throws Exception{
+  var legacy=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"legacy-member","deviceId":"legacy-web","deviceName":"Legacy Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated()).andReturn();
+  var userId=objectMapper.readTree(legacy.getResponse().getContentAsString()).path("userId").asText();
+
+  mvc.perform(post("/api/v1/auth/signup").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"legacy-member","password":"converted1234","deviceId":"converted-web","deviceName":"Converted Browser","platform":"WEB"}
+   """))
+   .andExpect(status().isCreated())
+   .andExpect(jsonPath("$.userId").value(userId));
+
+  mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
+   {"accountId":"legacy-member","deviceId":"legacy-after-conversion","deviceName":"Old Client","platform":"WEB"}
+   """))
+   .andExpect(status().isUnauthorized());
+ }
+
  @Test void demoScenarioBuildsTheClosedRecoveryLoopForJudging()throws Exception{
   var login=mvc.perform(post("/api/v1/auth/account").contentType(MediaType.APPLICATION_JSON).content("""
    {"accountId":"사용자","deviceId":"aac-demo-browser","deviceName":"AAC Judge","platform":"WEB"}

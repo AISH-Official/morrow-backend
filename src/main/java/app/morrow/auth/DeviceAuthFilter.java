@@ -25,6 +25,7 @@ public class DeviceAuthFilter extends OncePerRequestFilter {
         var path = request.getRequestURI();
         var publicAuth = path.equals("/api/v1/auth/device") || path.equals("/api/v1/auth/pair")
                 || path.equals("/api/v1/auth/account") || path.equals("/api/v1/auth/login")
+                || path.equals("/api/v1/auth/signup") || path.equals("/api/v1/auth/account-login")
                 || path.equals("/api/v1/auth/logout") || path.equals("/api/v1/auth/pairing-code");
         var apiDocumentation = path.equals("/swagger-ui.html") || path.startsWith("/swagger-ui/")
                 || path.equals("/v3/api-docs") || path.startsWith("/v3/api-docs/");

@@ -23,6 +23,8 @@ class OpenApiDocumentationTest {
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
                 .andExpect(jsonPath("$.info.title").value("Morrow Wellness API"))
                 .andExpect(jsonPath("$.paths['/api/v1/auth/login']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/signup']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/account-login']").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth").exists());
     }
 
