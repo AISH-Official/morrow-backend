@@ -24,6 +24,17 @@ openai:
     key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-4o}
   enabled: ${OPENAI_ENABLED:false}
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    operations-sorter: method
+    tags-sorter: alpha
+  packages-to-scan: app.morrow.api
+  paths-to-match: /api/v1/**
 morrow:
   time-zone: ${MORROW_TIME_ZONE:Asia/Seoul}
   assistant:

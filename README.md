@@ -217,6 +217,8 @@ mvn spring-boot:run
 ```
 
 - API: <http://localhost:8080/api/v1>
+- Swagger UI: <http://localhost:8080/swagger-ui.html>
+- OpenAPI JSON: <http://localhost:8080/v3/api-docs>
 - 상태 확인: <http://localhost:8080/actuator/health>
 - 기본 DB: `./data/morrow.mv.db` H2 파일
 - 데모 사용자: `default-user`
@@ -233,6 +235,7 @@ mvn spring-boot:run
 | `JPA_DDL_AUTO` | `update` | Hibernate 스키마 전략 |
 | `MORROW_DEMO_SEED` | `true` | 발표용 데이터 자동 생성 |
 | `MORROW_AUTH_REQUIRED` | `false` | 기기 Bearer 인증 강제 |
+| `SWAGGER_ENABLED` | `true` | Swagger UI와 OpenAPI 문서 활성화 |
 | `OPENAI_ENABLED` | `false` | OpenAI 실시간 응답 활성화 |
 | `OPENAI_API_KEY` | 빈 값 | OpenAI API 키 |
 | `OPENAI_MODEL` | `gpt-4o` | 사용할 모델 |
