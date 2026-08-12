@@ -67,7 +67,7 @@ public class AssistantService {
             return ProactiveInsight.skip(OpenAIClient.Mode.FALLBACK, "NO_RECENT_SIGNALS");
         }
 
-        var generated = openAIClient.generateResponse(
+        var generated = openAIClient.generateShortResponse(
                 promptBuilder.buildSystemPrompt() + "\n\n" + promptBuilder.buildProactiveNotificationInstruction(),
                 promptBuilder.buildUserContextPrompt(context),
                 "지금 사용자에게 선제적 웰니스 알림이 필요한지 판단해 주세요."

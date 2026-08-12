@@ -8,6 +8,7 @@ import java.util.Map;
 import app.morrow.health.HealthSignalSnapshot;
 import org.springframework.beans.factory.annotation.Value;
 import java.time.ZoneId;
+import java.time.Duration;
 import app.morrow.personalization.PersonalizationService;
 import app.morrow.recovery.RecoveryAttempt;
 import app.morrow.recovery.RecoveryAttemptService;
@@ -38,17 +39,57 @@ public class PushNotificationService {
     }
 
     public DispatchResult send(String userId, String title, String body, String category, Map<String, Object> data, boolean respectCooldown) {
+        return send(userId, title, body, category, data, respectCooldown ? DeliveryKind.RECOVERY : DeliveryKind.GENERAL);
+    }
+
+    private DispatchResult send(String userId, String title, String body, String category, Map<String, Object> data, DeliveryKind kind) {
         var results = new ArrayList<DeviceResult>(); var now = OffsetDateTime.now();
         var localHour = now.atZoneSameInstant(timeZone).getHour();
-        if (respectCooldown && (localHour >= 22 || localHour < 8)) return new DispatchResult(0, 0, java.util.List.of());
+        if (kind != DeliveryKind.GENERAL && (localHour >= 22 || localHour < 8)) return new DispatchResult(0, 0, java.util.List.of());
         for (var device : repository.findByUserIdAndActiveTrue(userId)) {
-            if (respectCooldown && device.getLastNotifiedAt() != null && device.getLastNotifiedAt().isAfter(now.minusHours(6))) { results.add(new DeviceResult(device.getPlatform(), false, 429, "Cooldown")); continue; }
+            if (onCooldown(device, kind, now)) { results.add(new DeviceResult(device.getPlatform(), false, 429, "Cooldown")); continue; }
             var result = gateway.send(device, title, body, category, data);
-            if (result.accepted()) device.markNotified();
+            if (result.accepted()) markDelivered(device, kind, now);
             if (result.statusCode() == 410 || "BadDeviceToken".equals(result.reason()) || "Unregistered".equals(result.reason())) device.deactivate();
             results.add(new DeviceResult(device.getPlatform(), result.accepted(), result.statusCode(), result.reason()));
         }
         return new DispatchResult(results.size(), results.stream().filter(DeviceResult::accepted).count(), results);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canSendRecoveryAlert(String userId) {
+        var now = OffsetDateTime.now();
+        var localHour = now.atZoneSameInstant(timeZone).getHour();
+        if (localHour >= 22 || localHour < 8) return false;
+        var threshold = now.minusHours(6);
+        return repository.findByUserIdAndActiveTrue(userId).stream()
+                .anyMatch(device -> device.getLastNotifiedAt() == null || !device.getLastNotifiedAt().isAfter(threshold));
+    }
+
+    public DispatchResult sendHourlyCheckInReminder(String userId) {
+        return send(userId,
+                "지금 상태를 30초만 확인해요",
+                "몸과 마음이 어떤지 체크인하면 다음 추천이 더 정확해져요.",
+                "MORROW_CHECKIN",
+                Map.of("type", "CHECKIN", "source", "HOURLY_REMINDER"),
+                DeliveryKind.CHECK_IN);
+    }
+
+    private boolean onCooldown(PushDevice device, DeliveryKind kind, OffsetDateTime now) {
+        return switch (kind) {
+            case RECOVERY -> within(device.getLastNotifiedAt(), now, Duration.ofHours(6));
+            case CHECK_IN -> within(device.getLastCheckInNotifiedAt(), now, Duration.ofMinutes(50));
+            case GENERAL -> false;
+        };
+    }
+
+    private boolean within(OffsetDateTime last, OffsetDateTime now, Duration duration) {
+        return last != null && last.isAfter(now.minus(duration));
+    }
+
+    private void markDelivered(PushDevice device, DeliveryKind kind, OffsetDateTime now) {
+        if (kind == DeliveryKind.RECOVERY) device.markRecoveryNotified(now);
+        if (kind == DeliveryKind.CHECK_IN) device.markCheckInNotified(now);
     }
 
     public DispatchResult sendRecoveryAlert(String userId, int load) {
@@ -102,4 +143,5 @@ public class PushNotificationService {
     public record DeviceResult(PushDevice.Platform platform, boolean accepted, int statusCode, String reason) {}
     public record Status(boolean enabled, boolean ready, long activeDevices, String iosTopic, String watchTopic) {}
     private record ActionContent(String title, String body, int durationSeconds) {}
+    private enum DeliveryKind { GENERAL, RECOVERY, CHECK_IN }
 }

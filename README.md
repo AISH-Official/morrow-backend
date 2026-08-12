@@ -265,6 +265,8 @@ mvn spring-boot:run
 | `MORROW_DEMO_LOGIN_PASSWORD` | 빈 값 | Secret으로 주입할 데모 비밀번호 |
 | `MORROW_DEMO_LOGIN_USER_ID` | `hackathon-demo` | 데모 계정이 사용할 내부 사용자 ID |
 | `APNS_ENABLED` | `false` | APNs 실제 전송 활성화 |
+| `MORROW_CHECK_IN_REMINDERS_ENABLED` | `true` | 오전 8시~오후 9시 매시간 체크인 푸시 활성화 |
+| `MORROW_CHECK_IN_CRON` | `0 0 * * * *` | 체크인 푸시 실행 주기(Spring cron) |
 | `APNS_TEAM_ID`, `APNS_KEY_ID` | 빈 값 | Apple token authentication 식별자 |
 | `APNS_PRIVATE_KEY`, `APNS_PRIVATE_KEY_PATH` | 빈 값 | APNs `.p8` 키 본문 또는 절대 경로 |
 | `APNS_IOS_TOPIC`, `APNS_WATCH_TOPIC` | 앱 bundle ID | iPhone·Watch APNs topic |
