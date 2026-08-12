@@ -264,7 +264,7 @@ class DashboardControllerTest {
  @Test void nativeHealthSummaryFeedsWebDashboardAndIsIdempotent()throws Exception{
   var userId="native-health-user";
   var payload="""
-   {"userId":"native-health-user","clientSnapshotId":"iphone-123","source":"IPHONE","sleepMinutes":392,"heartRate":78,"restingHeartRate":64,"hrv":52,"steps":8123,"activeEnergyKcal":356,"exerciseMinutes":31,"distanceMeters":5400,"flightsClimbed":8,"respiratoryRate":15.2,"oxygenSaturationPercent":98,"recordedAt":"2026-08-09T08:00:00+09:00"}
+   {"userId":"native-health-user","clientSnapshotId":"iphone-123","source":"IPHONE","sleepMinutes":392,"heartRate":78,"restingHeartRate":64,"hrv":52,"steps":8123,"activeEnergyKcal":356,"exerciseMinutes":31,"distanceMeters":5400,"flightsClimbed":8,"respiratoryRate":15.2,"oxygenSaturationPercent":98,"recordedAt":"2026-08-09T08:00:00+09:00","sleepSession":{"clientSleepId":"sleep-1","startAt":"2026-08-08T23:41:00+09:00","endAt":"2026-08-09T06:33:00+09:00","totalMinutes":392,"coreMinutes":201,"deepMinutes":71,"remMinutes":96,"awakeMinutes":24,"source":"IPHONE"},"workouts":[{"clientWorkoutId":"workout-1","activityType":"달리기","startAt":"2026-08-09T07:00:00+09:00","endAt":"2026-08-09T07:31:00+09:00","durationMinutes":31,"activeEnergyKcal":286,"distanceMeters":5100,"averageHeartRate":146,"maxHeartRate":171,"intensity":"HIGH","source":"WATCH"}]}
    """;
   mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
   mvc.perform(post("/api/v1/health/snapshots").contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isCreated());
@@ -277,7 +277,12 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.metrics.sleepMinutes").value(392))
    .andExpect(jsonPath("$.metrics.steps").value(9345))
    .andExpect(jsonPath("$.metrics.activeEnergyKcal").value(402))
-   .andExpect(jsonPath("$.metrics.exerciseMinutes").value(31));
+   .andExpect(jsonPath("$.metrics.exerciseMinutes").value(31))
+   .andExpect(jsonPath("$.healthDetails.sleep.startAt").value("2026-08-08T14:41:00Z"))
+   .andExpect(jsonPath("$.healthDetails.sleep.deepMinutes").value(71))
+   .andExpect(jsonPath("$.healthDetails.workouts[0].activityType").value("달리기"))
+   .andExpect(jsonPath("$.healthDetails.workouts[0].averageHeartRate").value(146.0))
+   .andExpect(jsonPath("$.healthDetails.workouts[0].intensity").value("HIGH"));
   org.junit.jupiter.api.Assertions.assertEquals(1,healthSnapshots.count());
  }
 
