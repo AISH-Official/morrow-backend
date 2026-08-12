@@ -2,6 +2,8 @@ package app.morrow.report;
 
 import app.morrow.checkin.CheckIn;
 import app.morrow.checkin.CheckInRepository;
+import app.morrow.recommendation.RecommendationFeedback;
+import app.morrow.recommendation.RecommendationFeedbackRepository;
 import app.morrow.recovery.RecoveryAttempt;
 import app.morrow.recovery.RecoveryAttemptRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,11 +23,13 @@ import java.util.stream.Collectors;
 public class ReportService {
     private final CheckInRepository checkIns;
     private final RecoveryAttemptRepository recoveryAttempts;
+    private final RecommendationFeedbackRepository recommendationFeedbacks;
     private final ZoneId timeZone;
 
-    public ReportService(CheckInRepository checkIns, RecoveryAttemptRepository recoveryAttempts, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone) {
+    public ReportService(CheckInRepository checkIns, RecoveryAttemptRepository recoveryAttempts, RecommendationFeedbackRepository recommendationFeedbacks, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone) {
         this.checkIns = checkIns;
         this.recoveryAttempts = recoveryAttempts;
+        this.recommendationFeedbacks = recommendationFeedbacks;
         this.timeZone = ZoneId.of(timeZone);
     }
 
@@ -39,7 +43,10 @@ public class ReportService {
         var previous = records.stream().filter(value -> localDate(value).isBefore(currentStart)).toList();
         var attempts = recoveryAttempts.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, previousStart.atStartOfDay(timeZone).toOffsetDateTime());
         var currentAttempts = attempts.stream().filter(value -> !localDate(value).isBefore(currentStart)).toList();
-        var completedAttempts = currentAttempts.stream().filter(value -> value.getStatus() == RecoveryAttempt.Status.COMPLETED && value.getOutcome() != null).toList();
+        var completedAttempts = attempts.stream().filter(value -> value.getStatus() == RecoveryAttempt.Status.COMPLETED && value.getOutcome() != null && value.getCompletedAt() != null && !localDate(value.getCompletedAt()).isBefore(currentStart)).toList();
+        var feedbacks = recommendationFeedbacks.findForUserAfter(userId, previousStart.atStartOfDay(timeZone).toOffsetDateTime());
+        var completedFeedbacks = feedbacks.stream().filter(value -> value.isCompleted() && !localDate(value).isBefore(currentStart)).toList();
+        var recoveryStats = combineRecoveryStats(currentAttempts, completedAttempts, completedFeedbacks);
 
         var statusCounts = current.stream().collect(Collectors.groupingBy(CheckIn::getStatus, Collectors.counting()));
         var causeCounts = current.stream().filter(value -> value.getCause() != null)
@@ -58,23 +65,41 @@ public class ReportService {
         }
         var improvedCounts = completedAttempts.stream().filter(value -> value.getOutcome() == RecoveryAttempt.Outcome.IMPROVED).collect(Collectors.groupingBy(RecoveryAttempt::getAction, Collectors.counting()));
         var topHelpfulAction = improvedCounts.entrySet().stream().max(Map.Entry.comparingByValue()).map(value -> actionLabel(value.getKey())).orElse(null);
-        var improved = completedAttempts.stream().filter(value -> value.getOutcome() == RecoveryAttempt.Outcome.IMPROVED).count();
-        var helpfulRate = completedAttempts.isEmpty() ? 0 : improved * 100.0 / completedAttempts.size();
+        var helpfulRate = recoveryStats.completed() == 0 ? 0 : recoveryStats.improved() * 100.0 / recoveryStats.completed();
         var patterns = new ArrayList<String>();
         if (!current.isEmpty()) {
             patterns.add(topStatus + " 상태가 가장 많이 기록됨");
             patterns.add(topCause == null ? "다양한 원인이 기록됨" : topCause + " 원인이 주요 맥락");
             patterns.add(previous.isEmpty() ? "비교할 지난주 기록이 더 필요함" : String.format("지난주보다 회복 흐름 %+.1f점", change));
         }
-        if (!completedAttempts.isEmpty()) patterns.add("회복 행동 " + completedAttempts.size() + "회 실행 · " + Math.round(helpfulRate) + "%에서 나아짐");
+        if (recoveryStats.completed() > 0) patterns.add("회복 행동 " + recoveryStats.completed() + "회 실행 · " + Math.round(helpfulRate) + "%에서 나아짐");
         var insight = insight(current.size(), average, change, previous.isEmpty());
-        var recoveryInsight = recoveryInsight(currentAttempts.size(), completedAttempts.size(), topHelpfulAction, helpfulRate);
+        var recoveryInsight = recoveryInsight(recoveryStats.suggested(), recoveryStats.completed(), topHelpfulAction, helpfulRate);
         return new WeeklyReport(current.size(), topStatus, topCause, average, change, daily, patterns, insight,
-                currentAttempts.size(), completedAttempts.size(), helpfulRate, topHelpfulAction, recoveryInsight);
+                recoveryStats.suggested(), recoveryStats.completed(), helpfulRate, topHelpfulAction, recoveryInsight);
     }
 
     private LocalDate localDate(CheckIn value) { return value.getRecordedAt().atZoneSameInstant(timeZone).toLocalDate(); }
     private LocalDate localDate(RecoveryAttempt value) { return value.getCreatedAt().atZoneSameInstant(timeZone).toLocalDate(); }
+    private LocalDate localDate(RecommendationFeedback value) { return localDate(value.getCreatedAt()); }
+    private LocalDate localDate(OffsetDateTime value) { return value.atZoneSameInstant(timeZone).toLocalDate(); }
+    private RecoveryStats combineRecoveryStats(List<RecoveryAttempt> currentAttempts,List<RecoveryAttempt> completedAttempts,List<RecommendationFeedback> completedFeedbacks) {
+        var unmatchedFeedbacks = new ArrayList<>(completedFeedbacks);
+        for (var attempt : completedAttempts) {
+            var completedAt = attempt.getCompletedAt();
+            var closestIndex = -1;
+            var closestSeconds = Long.MAX_VALUE;
+            for (var index = 0; index < unmatchedFeedbacks.size(); index++) {
+                var seconds = Math.abs(java.time.Duration.between(completedAt, unmatchedFeedbacks.get(index).getCreatedAt()).getSeconds());
+                if (seconds <= 300 && seconds < closestSeconds) { closestIndex = index; closestSeconds = seconds; }
+            }
+            if (closestIndex >= 0) unmatchedFeedbacks.remove(closestIndex);
+        }
+        var improvedAttempts = completedAttempts.stream().filter(value -> value.getOutcome() == RecoveryAttempt.Outcome.IMPROVED).count();
+        var improvedLegacyFeedbacks = unmatchedFeedbacks.stream().filter(RecommendationFeedback::isHelpful).count();
+        var completed = completedAttempts.size() + unmatchedFeedbacks.size();
+        return new RecoveryStats(Math.max(currentAttempts.size() + unmatchedFeedbacks.size(), completed), completed, improvedAttempts + improvedLegacyFeedbacks);
+    }
     private double averageScore(List<CheckIn> values) { return values.stream().mapToInt(value -> statusScore(value.getStatus())).average().orElse(0); }
     private int statusScore(CheckIn.Status status) { return switch (status) { case OK -> 100; case TENSE -> 60; case LOW_FOCUS -> 55; case TIRED -> 45; case UNCOMFORTABLE -> 35; }; }
     private <T extends Enum<T>> String maxName(Map<T, Long> values) { return values.entrySet().stream().max(Map.Entry.comparingByValue()).map(value -> value.getKey().name()).orElse(null); }
@@ -97,6 +122,7 @@ public class ReportService {
     }; }
 
     public record DailyPoint(LocalDate date, Integer score, int checkInCount) {}
+    private record RecoveryStats(int suggested,int completed,long improved) {}
     public record WeeklyReport(int totalCheckIns, String topStatus, String topCause, double improvementRate,
                                double changeFromPrevious, List<DailyPoint> dailyScores, List<String> patterns, String insights,
                                int suggestedRecoveryCount, int completedRecoveryCount, double recoveryHelpfulRate,
