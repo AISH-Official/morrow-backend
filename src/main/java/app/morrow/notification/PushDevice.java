@@ -16,6 +16,7 @@ public class PushDevice {
     @Column(name = "registered_at", nullable = false) private OffsetDateTime registeredAt;
     @Column(name = "last_seen_at", nullable = false) private OffsetDateTime lastSeenAt;
     @Column(name = "last_notified_at") private OffsetDateTime lastNotifiedAt;
+    @Column(name = "last_check_in_notified_at") private OffsetDateTime lastCheckInNotifiedAt;
 
     protected PushDevice() {}
     PushDevice(String userId, String deviceToken, Platform platform, Environment environment) {
@@ -24,10 +25,12 @@ public class PushDevice {
     }
     void refresh(String userId, Platform platform, Environment environment) { this.userId = userId; this.platform = platform; this.environment = environment; this.active = true; this.lastSeenAt = OffsetDateTime.now(); }
     void deactivate() { this.active = false; }
-    void markNotified() { this.lastNotifiedAt = OffsetDateTime.now(); }
+    void markRecoveryNotified(OffsetDateTime at) { this.lastNotifiedAt = at; }
+    void markCheckInNotified(OffsetDateTime at) { this.lastCheckInNotifiedAt = at; }
     public UUID getId() { return id; } public String getUserId() { return userId; } public String getDeviceToken() { return deviceToken; }
     public Platform getPlatform() { return platform; } public Environment getEnvironment() { return environment; } public boolean isActive() { return active; }
     public OffsetDateTime getRegisteredAt() { return registeredAt; } public OffsetDateTime getLastSeenAt() { return lastSeenAt; } public OffsetDateTime getLastNotifiedAt() { return lastNotifiedAt; }
+    public OffsetDateTime getLastCheckInNotifiedAt() { return lastCheckInNotifiedAt; }
     public enum Platform { IOS, WATCHOS }
     public enum Environment { SANDBOX, PRODUCTION }
 }

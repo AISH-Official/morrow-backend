@@ -33,9 +33,7 @@ public class HttpApnsGateway implements ApnsGateway {
     @Override public SendResult send(PushDevice device, String title, String body, String category, Map<String, Object> data) {
         if (!properties.ready()) return new SendResult(false, 503, "APNsNotConfigured");
         try {
-            var aps = new LinkedHashMap<String, Object>();
-            aps.put("alert", Map.of("title", title, "body", body)); aps.put("sound", "default"); aps.put("category", category);
-            var payload = new LinkedHashMap<String, Object>(); payload.put("aps", aps); payload.put("morrow", data);
+            var payload = buildPayload(title, body, category, data);
             var host = device.getEnvironment() == PushDevice.Environment.PRODUCTION ? "api.push.apple.com" : "api.sandbox.push.apple.com";
             var request = HttpRequest.newBuilder(URI.create("https://" + host + "/3/device/" + device.getDeviceToken()))
                     .timeout(Duration.ofSeconds(15)).header("authorization", "bearer " + jwt()).header("apns-topic", properties.topic(device.getPlatform()))
@@ -46,6 +44,17 @@ public class HttpApnsGateway implements ApnsGateway {
             var reason = accepted ? "Accepted" : parseReason(response.body());
             return new SendResult(accepted, response.statusCode(), reason);
         } catch (Exception error) { return new SendResult(false, 502, error.getClass().getSimpleName()); }
+    }
+
+    Map<String, Object> buildPayload(String title, String body, String category, Map<String, Object> data) {
+        var aps = new LinkedHashMap<String, Object>();
+        aps.put("alert", Map.of("title", title, "body", body));
+        aps.put("sound", "default");
+        aps.put("category", category);
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("aps", aps);
+        data.forEach((key, value) -> { if (!"aps".equals(key)) payload.put(key, value); });
+        return payload;
     }
 
     private synchronized String jwt() throws Exception {
