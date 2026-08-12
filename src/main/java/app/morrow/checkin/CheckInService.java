@@ -2,6 +2,7 @@ package app.morrow.checkin;
 
 import app.morrow.recommendation.Recommendation;
 import app.morrow.recommendation.RecommendationService;
+import app.morrow.recommendation.AIRecommendationService;
 import app.morrow.personalization.PersonalizationService;
 import app.morrow.timeline.Timeline;
 import app.morrow.timeline.TimelineService;
@@ -19,10 +20,11 @@ public class CheckInService {
  private final TimelineService timelineService;
  private final RecommendationService recommendationService;
  private final PersonalizationService personalizationService;
+ private final AIRecommendationService aiRecommendations;
  private final ZoneId timeZone;
 
- public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService,@Value("${morrow.time-zone:Asia/Seoul}")String timeZone){
-  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;this.timeZone=ZoneId.of(timeZone);
+ public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService,AIRecommendationService aiRecommendations,@Value("${morrow.time-zone:Asia/Seoul}")String timeZone){
+  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;this.aiRecommendations=aiRecommendations;this.timeZone=ZoneId.of(timeZone);
  }
 
  public CheckIn create(CreateCheckIn input){
@@ -37,7 +39,8 @@ public class CheckInService {
   timelineService.create(new TimelineService.CreateTimeline(userId,localTime,"상태 체크인",timelineDetail(checkIn),Timeline.Kind.CHECKIN,true,recordedAt));
   var recommendation=recommendationFor(checkIn);
   var personalized=personalizationService.personalizeAction(userId,checkIn.getStatus(),recommendation.title(),recommendation.rationale());
-  recommendationService.create(new RecommendationService.CreateRecommendation(userId,personalized.title(),personalized.rationale(),Recommendation.Status.ACTIVE,checkIn.getId()));
+  var selected=aiRecommendations.compose(userId,checkIn,personalized.title(),personalized.rationale(),personalized.personalized());
+  recommendationService.create(new RecommendationService.CreateRecommendation(userId,selected.title(),selected.rationale(),Recommendation.Status.ACTIVE,checkIn.getId(),selected.action(),selected.durationSeconds(),selected.source()));
   personalizationService.learnFromCheckIn(checkIn);
   return checkIn;
  }

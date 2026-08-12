@@ -36,13 +36,21 @@ public class OpenAIClient {
     }
 
     public GenerationResult generateResponse(String systemPrompt, String userContextPrompt, String userMessage) {
+        return generateResponse(systemPrompt, userContextPrompt, userMessage, Duration.ofSeconds(30), 900);
+    }
+
+    public GenerationResult generateShortResponse(String systemPrompt, String userContextPrompt, String userMessage) {
+        return generateResponse(systemPrompt, userContextPrompt, userMessage, Duration.ofSeconds(8), 240);
+    }
+
+    private GenerationResult generateResponse(String systemPrompt, String userContextPrompt, String userMessage, Duration timeout, int maxTokens) {
         if (!enabled || apiKey == null || apiKey.isBlank()) {
             log.warn("OpenAI assistant is using fallback mode because it is disabled or no API key is configured");
             return new GenerationResult(null, Mode.FALLBACK);
         }
 
         try {
-            var service = new OpenAiService(apiKey, Duration.ofSeconds(30));
+            var service = new OpenAiService(apiKey, timeout);
             var messages = new ArrayList<ChatMessage>();
             messages.add(new ChatMessage("system", systemPrompt + "\n\n" + userContextPrompt));
             messages.add(new ChatMessage("user", userMessage));
@@ -50,7 +58,7 @@ public class OpenAIClient {
                     .model(model)
                     .messages(messages)
                     .temperature(0.35)
-                    .maxTokens(900)
+                    .maxTokens(maxTokens)
                     .build();
             var completion = service.createChatCompletion(request);
             var content = normalizeContent(completion.getChoices().get(0).getMessage().getContent());

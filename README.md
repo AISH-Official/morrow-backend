@@ -137,11 +137,12 @@ Watch / iPhone / Web 체크인
   → Timeline 항목 생성
   → 상태·원인 기반 기본 행동 선택
   → 과거 추천 피드백으로 행동 조정
-  → Recommendation 저장
+  → OpenAI가 최근 체크인·선호·효과 기록과 동의된 건강 요약으로 한 번 더 맞춤 선택
+  → 행동 종류와 실행 시간을 포함한 Recommendation 저장
   → 원인 패턴을 UserMemory에 학습
 ```
 
-`clientEventId`가 같은 재전송은 기존 체크인을 반환해 WatchConnectivity 재시도로 인한 중복 학습을 막습니다. 여기서 학습은 범용 모델 파인튜닝이 아니라 사용자 계정별 설명 가능한 메모리 갱신입니다.
+AI 추천은 `BREATH`, `WALK`, `WATER_WALK`, `STRETCH`, `FOCUS`, `SCREEN_BREAK` 중 하나와 30초~30분 사이의 실행 시간을 구조화해 저장합니다. 형식 검증이나 안전 기준을 통과하지 못하거나 OpenAI 연결이 없으면 기존 규칙·개인화 메모리 추천으로 즉시 대체합니다. `clientEventId`가 같은 재전송은 기존 체크인을 반환해 WatchConnectivity 재시도로 인한 중복 학습을 막습니다. 여기서 학습은 범용 모델 파인튜닝이 아니라 사용자 계정별 설명 가능한 메모리 갱신입니다.
 
 ### 4. AI 어시스턴트
 

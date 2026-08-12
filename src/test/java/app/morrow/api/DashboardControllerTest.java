@@ -336,7 +336,11 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.wellnessLoad").value("MODERATE"))
    .andExpect(jsonPath("$.timeline[0].kind").value("CHECKIN"))
    .andExpect(jsonPath("$.timeline[0].userConfirmed").value(true))
-   .andExpect(jsonPath("$.recommendation.title").value("7분 동안 가볍게 걸어보세요"));
+   .andExpect(jsonPath("$.recommendation.title").value("7분 동안 가볍게 걸어보세요"))
+   .andExpect(jsonPath("$.recommendation.action").value("WALK"))
+   .andExpect(jsonPath("$.recommendation.durationSeconds").value(420))
+   .andExpect(jsonPath("$.recommendation.source").value("RULE"))
+   .andExpect(jsonPath("$.recommendation.personalized").value(false));
  }
 
  @Test void userDataIsIsolatedAndCanBeDeleted()throws Exception{
@@ -398,7 +402,11 @@ class DashboardControllerTest {
   mvc.perform(get("/api/v1/dashboard").param("userId",userId))
    .andExpect(status().isOk())
    .andExpect(jsonPath("$.recommendation.title").value("물 한 잔을 마시고 5분 쉬어보세요"))
-   .andExpect(jsonPath("$.recommendation.rationale").value(org.hamcrest.Matchers.containsString("피드백")));
+   .andExpect(jsonPath("$.recommendation.rationale").value(org.hamcrest.Matchers.containsString("피드백")))
+   .andExpect(jsonPath("$.recommendation.action").value("WATER_WALK"))
+   .andExpect(jsonPath("$.recommendation.durationSeconds").value(300))
+   .andExpect(jsonPath("$.recommendation.source").value("LEARNED"))
+   .andExpect(jsonPath("$.recommendation.personalized").value(true));
 
   mvc.perform(post("/api/v1/assistant/messages").contentType(MediaType.APPLICATION_JSON).content("""
    {"userId":"learning-user","content":"지금 뭘 하면 좋을까?"}

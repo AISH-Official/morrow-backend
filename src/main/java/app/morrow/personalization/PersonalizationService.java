@@ -110,7 +110,7 @@ public class PersonalizationService {
                 case TIRED -> new ActionAdvice("물 한 잔을 마시고 5분 쉬어보세요", "이전에 비슷한 추천이 맞지 않았다는 피드백을 반영해 더 부담이 적은 방법으로 바꿨어요.", true);
                 case TENSE -> new ActionAdvice("어깨 힘을 빼고 천천히 자세를 바꿔보세요", "이전에 맞지 않았던 방법 대신 몸의 긴장을 가볍게 낮추는 행동을 골랐어요.", true);
                 case LOW_FOCUS -> new ActionAdvice("할 일을 하나만 남기고 5분 시작해 보세요", "이전 피드백을 반영해 집중 구간을 더 짧게 조정했어요.", true);
-                case OK -> new ActionAdvice("지금의 좋은 흐름을 기록해 두세요", "잘 맞지 않았던 행동을 반복하지 않고 현재 리듬을 관찰하도록 조정했어요.", true);
+                case OK -> new ActionAdvice("1분 동안 편하게 호흡하며 좋은 흐름을 확인해 보세요", "잘 맞지 않았던 행동을 반복하지 않고 현재 리듬을 가볍게 확인하도록 조정했어요.", true);
                 case UNCOMFORTABLE -> new ActionAdvice("활동을 멈추고 편한 자세에서 상태를 확인하세요", "이전 피드백과 안전을 우선해 적극적인 활동 대신 관찰을 제안해요.", true);
             };
         }
