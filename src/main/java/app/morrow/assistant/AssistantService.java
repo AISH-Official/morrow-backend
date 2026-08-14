@@ -47,6 +47,7 @@ public class AssistantService {
         } else {
             evidenceCount = context.memories().stream().mapToInt(value -> value.getEvidenceCount()).sum();
             var generated = openAIClient.generateResponse(
+                    userId,
                     promptBuilder.buildSystemPrompt(),
                     promptBuilder.buildUserContextPrompt(context),
                     content
@@ -71,6 +72,7 @@ public class AssistantService {
         }
 
         var generated = openAIClient.generateShortResponse(
+                userId,
                 promptBuilder.buildSystemPrompt() + "\n\n" + promptBuilder.buildProactiveNotificationInstruction(),
                 promptBuilder.buildUserContextPrompt(context),
                 "지금 사용자에게 선제적 웰니스 알림이 필요한지 판단해 주세요."

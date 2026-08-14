@@ -55,7 +55,9 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_CHAT_MODEL: ${{ secrets.OPENAI_CHAT_MODEL }}
+          OPENAI_SHORT_MODEL: ${{ secrets.OPENAI_SHORT_MODEL }}
+          OPENAI_FALLBACK_MODEL: ${{ secrets.OPENAI_FALLBACK_MODEL }}
           OPENAI_ENABLED: ${{ secrets.OPENAI_ENABLED }}
           MORROW_AI_INCLUDE_HEALTH_DATA: "true"
           MORROW_DEMO_LOGIN_ENABLED: ${{ secrets.MORROW_DEMO_LOGIN_ENABLED }}
@@ -64,7 +66,9 @@ jobs:
           MORROW_DEMO_LOGIN_USER_ID: ${{ secrets.MORROW_DEMO_LOGIN_USER_ID }}
         run: |
           test -n "$OPENAI_API_KEY"
-          test -n "$OPENAI_MODEL"
+          test -n "$OPENAI_CHAT_MODEL"
+          test -n "$OPENAI_SHORT_MODEL"
+          test -n "$OPENAI_FALLBACK_MODEL"
           test -n "$MORROW_DEMO_LOGIN_USERNAME"
           test -n "$MORROW_DEMO_LOGIN_PASSWORD"
           test -n "$MORROW_DEMO_LOGIN_USER_ID"
@@ -79,7 +83,9 @@ jobs:
 
           {
             printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
-            printf 'OPENAI_MODEL=%s\n' "$OPENAI_MODEL"
+            printf 'OPENAI_CHAT_MODEL=%s\n' "$OPENAI_CHAT_MODEL"
+            printf 'OPENAI_SHORT_MODEL=%s\n' "$OPENAI_SHORT_MODEL"
+            printf 'OPENAI_FALLBACK_MODEL=%s\n' "$OPENAI_FALLBACK_MODEL"
             printf 'OPENAI_ENABLED=%s\n' "$OPENAI_ENABLED"
             printf 'MORROW_AI_INCLUDE_HEALTH_DATA=%s\n' "$MORROW_AI_INCLUDE_HEALTH_DATA"
             printf 'MORROW_DEMO_LOGIN_ENABLED=%s\n' "$MORROW_DEMO_LOGIN_ENABLED"

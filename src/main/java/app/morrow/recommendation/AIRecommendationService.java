@@ -39,6 +39,7 @@ public class AIRecommendationService {
         );
         var context = contexts.collectContext(userId);
         var generated = openAI.generateShortResponse(
+                userId,
                 systemInstruction(),
                 prompts.buildUserContextPrompt(context),
                 userInstruction(checkIn, fallback)

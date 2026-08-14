@@ -36,13 +36,16 @@ jobs:
           sudo systemctl is-active morrow-api
           test -s "$environment_file" || sudo test -s "$environment_file"
           enabled="$(sudo sed -n 's/^OPENAI_ENABLED=//p' "$environment_file" | tail -1)"
-          model="$(sudo sed -n 's/^OPENAI_MODEL=//p' "$environment_file" | tail -1)"
+          chat_model="$(sudo sed -n 's/^OPENAI_CHAT_MODEL=//p' "$environment_file" | tail -1)"
+          short_model="$(sudo sed -n 's/^OPENAI_SHORT_MODEL=//p' "$environment_file" | tail -1)"
+          fallback_model="$(sudo sed -n 's/^OPENAI_FALLBACK_MODEL=//p' "$environment_file" | tail -1)"
           api_key="$(sudo sed -n 's/^OPENAI_API_KEY=//p' "$environment_file" | tail -1)"
 
           printf 'openai_enabled=%s\n' "$enabled"
-          printf 'openai_model=%s\n' "$model"
+          printf 'openai_chat_model=%s\n' "$chat_model"
+          printf 'openai_short_model=%s\n' "$short_model"
+          printf 'openai_fallback_model=%s\n' "$fallback_model"
           printf 'openai_key_configured=%s\n' "$([ -n "$api_key" ] && printf true || printf false)"
-          printf 'openai_key_length=%s\n' "${#api_key}"
 
           printf '%s\n' 'recent_application_failures:'
           sudo journalctl -u morrow-api --since '3 hours ago' --no-pager \
@@ -50,24 +53,41 @@ jobs:
             | sed -E 's/sk-[A-Za-z0-9_-]+/[REDACTED]/g' \
             | tail -n 100 || true
 
-          payload="$(printf '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with OK only.\"}],\"max_tokens\":8,\"temperature\":0}' "$model")"
-          http_status="$(curl --silent --show-error --max-time 30 \
-            --output "$probe_file" --write-out '%{http_code}' \
-            https://api.openai.com/v1/chat/completions \
-            -H "Authorization: Bearer $api_key" \
-            -H 'Content-Type: application/json' \
-            --data "$payload")"
-          printf 'openai_http_status=%s\n' "$http_status"
+          test -n "$chat_model"
+          test -n "$short_model"
+          test -n "$fallback_model"
+          for route in chat short fallback; do
+            case "$route" in
+              chat) model="$chat_model"; effort=low ;;
+              short) model="$short_model"; effort=none ;;
+              fallback) model="$fallback_model"; effort=none ;;
+            esac
+            payload="$(printf '{\"model\":\"%s\",\"input\":\"Reply with OK only.\",\"max_output_tokens\":128,\"store\":false,\"reasoning\":{\"effort\":\"%s\",\"context\":\"current_turn\"},\"text\":{\"verbosity\":\"low\"}}' "$model" "$effort")"
+            http_status="$(curl --silent --show-error --max-time 45 \
+              --output "$probe_file" --write-out '%{http_code}' \
+              https://api.openai.com/v1/responses \
+              -H "Authorization: Bearer $api_key" \
+              -H 'Content-Type: application/json' \
+              --data "$payload")"
+            printf 'openai_%s_http_status=%s\n' "$route" "$http_status"
 
-          PROBE_FILE="$probe_file" python3 - <<'PY'
+            ROUTE="$route" PROBE_FILE="$probe_file" python3 - <<'PY'
           import json
           import os
 
+          route = os.environ["ROUTE"]
           with open(os.environ["PROBE_FILE"], encoding="utf-8") as source:
               payload = json.load(source)
+          live = any(
+              content.get("type") == "output_text" and bool(content.get("text"))
+              for output in payload.get("output", [])
+              for content in output.get("content", [])
+          )
           error = payload.get("error") or {}
-          print("openai_error_type=" + str(error.get("type") or ""))
-          print("openai_error_code=" + str(error.get("code") or ""))
-          print("openai_live_response=" + str(bool(payload.get("choices"))).lower())
+          print(f"openai_{route}_live_response={str(live).lower()}")
+          if not live:
+              print(f"openai_{route}_error_code={error.get('code') or error.get('type') or ''}")
+              raise SystemExit(1)
           PY
+          done
           REMOTE

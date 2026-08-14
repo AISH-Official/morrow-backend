@@ -22,7 +22,9 @@ server:
 openai:
   api:
     key: ${OPENAI_API_KEY:}
-  model: ${OPENAI_MODEL:gpt-4o}
+  chat-model: ${OPENAI_CHAT_MODEL:gpt-5.6-sol}
+  short-model: ${OPENAI_SHORT_MODEL:gpt-5.6-terra}
+  fallback-model: ${OPENAI_FALLBACK_MODEL:gpt-5.6-luna}
   enabled: ${OPENAI_ENABLED:false}
 springdoc:
   api-docs:
