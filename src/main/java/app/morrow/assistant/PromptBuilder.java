@@ -73,52 +73,50 @@ public class PromptBuilder {
         sb.append("=== 사용자 컨텍스트 ===\n\n");
         if (!context.recentHealthSnapshots().isEmpty()) {
             sb.append("최근 Watch/iPhone 건강 데이터 (기기에서 집계된 값이며 의료 진단 자료가 아님):\n");
-            context.recentHealthSnapshots().stream().limit(8).forEach(snapshot ->
+            context.recentHealthSnapshots().stream().limit(4).forEach(snapshot ->
                     sb.append(formatHealthSnapshot(snapshot)).append('\n')
             );
         }
         if (!context.memories().isEmpty()) {
             sb.append("장기 개인화 메모리 (사용자별 저장소, 신뢰도와 근거 수 포함):\n");
-            context.memories().stream().limit(12).forEach(memory -> sb.append(String.format(
+            context.memories().stream().limit(6).forEach(memory -> sb.append(String.format(
                     "- [%s, 신뢰도 %.0f%%, 근거 %d] %s%s\n",
-                    memory.getType(), memory.getConfidence() * 100, memory.getEvidenceCount(), memory.getSummary(),
+                    memory.getType(), memory.getConfidence() * 100, memory.getEvidenceCount(), clip(memory.getSummary(), 240),
                     memory.getNegativeEvidence() > memory.getPositiveEvidence() ? " (우선 추천하지 않기)" : ""
             )));
         }
         if (!context.recentCheckIns().isEmpty()) {
             sb.append("\n최근 7일 체크인 기록:\n");
-            context.recentCheckIns().stream().limit(10).forEach(checkIn -> sb.append(String.format(
+            context.recentCheckIns().stream().limit(6).forEach(checkIn -> sb.append(String.format(
                     "- %s: %s 상태, 원인: %s%s\n",
                     checkIn.getRecordedAt().atZoneSameInstant(timeZone).format(DateTimeFormatter.ofPattern("MM/dd HH:mm")),
                     translateStatus(checkIn.getStatus()),
                     checkIn.getCause() != null ? translateCause(checkIn.getCause()) : "미기록",
-                    checkIn.getNote() != null ? " (" + checkIn.getNote() + ")" : ""
+                    checkIn.getNote() != null ? " (" + clip(checkIn.getNote(), 160) + ")" : ""
             )));
         }
         if (!context.recentTimelines().isEmpty()) {
             sb.append("\n최근 타임라인:\n");
-            context.recentTimelines().stream().limit(5).forEach(timeline -> sb.append(String.format(
-                    "- %s: %s - %s\n", timeline.getDisplayTime(timeZone), timeline.getTitle(), timeline.getDetail()
+            context.recentTimelines().stream().limit(3).forEach(timeline -> sb.append(String.format(
+                    "- %s: %s - %s\n", timeline.getDisplayTime(timeZone), clip(timeline.getTitle(), 120), clip(timeline.getDetail(), 240)
             )));
         }
         if (!context.recentRecommendations().isEmpty()) {
             sb.append("\n최근 추천:\n");
-            context.recentRecommendations().stream().limit(3).forEach(recommendation -> sb.append(String.format(
+            context.recentRecommendations().stream().limit(2).forEach(recommendation -> sb.append(String.format(
                     "- %s (상태: %s)\n  근거: %s\n",
-                    recommendation.getTitle(), recommendation.getStatus(), recommendation.getRationale()
+                    clip(recommendation.getTitle(), 120), recommendation.getStatus(), clip(recommendation.getRationale(), 240)
             )));
         }
         if (!context.recentMessages().isEmpty()) {
             sb.append("\n최근 대화:\n");
-            var messages = context.recentMessages().stream().limit(24).toList();
+            var messages = context.recentMessages().stream().limit(12).toList();
             for (var index = messages.size() - 1; index >= 0; index--) {
                 var message = messages.get(index);
                 sb.append(String.format(
                         "- %s: %s\n",
                         message.getRole() == AssistantMessage.Role.USER ? "사용자" : "AI",
-                        message.getContent().length() > 100
-                                ? message.getContent().substring(0, 100) + "..."
-                                : message.getContent()
+                        clip(message.getContent(), 100)
                 ));
             }
         }
@@ -129,6 +127,11 @@ public class PromptBuilder {
             sb.append("아직 기록된 데이터가 없습니다. 기록이 필요한 질문이라면 체크인을 제안할 수 있습니다.\n");
         }
         return sb.toString();
+    }
+
+    static String clip(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) return value;
+        return value.substring(0, maxLength).stripTrailing() + "...";
     }
 
     public String buildProactiveNotificationInstruction() {

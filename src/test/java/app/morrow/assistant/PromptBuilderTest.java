@@ -98,4 +98,14 @@ class PromptBuilderTest {
         assertThat(prompt.indexOf("사용자: 내일 발표가 있어서 긴장돼"))
                 .isLessThan(prompt.indexOf("AI: 발표 전에 짧게 호흡해 보세요"));
     }
+
+    @Test
+    void clipsLongStoredTextBeforeSendingItToOpenAi() {
+        var longMessage = "아주 긴 이전 대화 ".repeat(40);
+
+        assertThat(PromptBuilder.clip(longMessage, 100))
+                .hasSize(103)
+                .endsWith("...")
+                .doesNotContain(longMessage);
+    }
 }
