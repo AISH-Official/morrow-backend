@@ -26,6 +26,7 @@ public class OpenAIClient {
     private static final Duration CHAT_TIMEOUT = Duration.ofSeconds(18);
     private static final Duration SHORT_TIMEOUT = Duration.ofSeconds(8);
     private static final int MAX_ATTEMPTS = 2;
+    private static final String RATE_LIMIT_FALLBACK_MODEL = "gpt-4o-mini";
     private static final Set<String> NON_RETRYABLE_429_CODES = Set.of(
             "credit_balance_exhausted",
             "organization_spend_limit_exceeded",
@@ -110,16 +111,17 @@ public class OpenAIClient {
         var messages = new ArrayList<ChatMessage>();
         messages.add(new ChatMessage("system", systemPrompt + "\n\n" + userContextPrompt));
         messages.add(new ChatMessage("user", userMessage));
-        var request = ChatCompletionRequest.builder()
-                .model(model)
-                .messages(messages)
-                .temperature(0.35)
-                .maxTokens(maxTokens)
-                .build();
         var startedAt = System.nanoTime();
+        var requestModel = model;
 
         for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
+                var request = ChatCompletionRequest.builder()
+                        .model(requestModel)
+                        .messages(messages)
+                        .temperature(0.35)
+                        .maxTokens(maxTokens)
+                        .build();
                 var completion = service.createChatCompletion(request);
                 var content = completion == null || completion.getChoices() == null || completion.getChoices().isEmpty()
                         ? null
@@ -128,20 +130,27 @@ public class OpenAIClient {
                     throw new EmptyOpenAIResponseException();
                 }
                 recordSuccess();
-                log.debug("OpenAI request succeeded. attempt={}, elapsedMs={}", attempt, elapsedMillis(startedAt));
+                log.debug("OpenAI request succeeded. model={}, attempt={}, elapsedMs={}", requestModel, attempt, elapsedMillis(startedAt));
                 return new GenerationResult(content, Mode.LIVE);
             } catch (Exception error) {
                 var retryable = attempt < MAX_ATTEMPTS && isRetryable(error);
                 if (retryable) {
                     retriedRequests.incrementAndGet();
+                    var retryModel = isRateLimited(error) && !RATE_LIMIT_FALLBACK_MODEL.equals(requestModel)
+                            ? RATE_LIMIT_FALLBACK_MODEL
+                            : requestModel;
                     var delay = retryDelay(attempt);
                     log.warn(
-                            "OpenAI transient failure; retrying. type={}, status={}, attempt={}, delayMs={}",
+                            "OpenAI transient failure; retrying. type={}, status={}, code={}, model={}, retryModel={}, attempt={}, delayMs={}",
                             failureType(error),
                             httpStatus(error),
+                            failureCode(error),
+                            requestModel,
+                            retryModel,
                             attempt,
                             delay.toMillis()
                     );
+                    requestModel = retryModel;
                     try {
                         sleeper.sleep(delay);
                     } catch (InterruptedException interrupted) {
@@ -154,9 +163,11 @@ public class OpenAIClient {
 
                 recordFailure(error);
                 log.warn(
-                        "OpenAI request failed; using fallback mode. type={}, status={}, attempt={}, elapsedMs={}",
+                        "OpenAI request failed; using fallback mode. type={}, status={}, code={}, model={}, attempt={}, elapsedMs={}",
                         failureType(error),
                         httpStatus(error),
+                        failureCode(error),
+                        requestModel,
                         attempt,
                         elapsedMillis(startedAt)
                 );
@@ -196,6 +207,24 @@ public class OpenAIClient {
             }
         }
         return false;
+    }
+
+    private static boolean isRateLimited(Throwable error) {
+        for (var current = error; current != null; current = current.getCause()) {
+            if (current instanceof OpenAiHttpException httpError) {
+                return httpError.statusCode == 429;
+            }
+        }
+        return false;
+    }
+
+    private static String failureCode(Throwable error) {
+        for (var current = error; current != null; current = current.getCause()) {
+            if (current instanceof OpenAiHttpException httpError) {
+                return httpError.code;
+            }
+        }
+        return null;
     }
 
     private static Duration retryDelay(int attempt) {

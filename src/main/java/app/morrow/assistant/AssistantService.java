@@ -56,7 +56,10 @@ public class AssistantService {
                     ? generated.content()
                     : promptBuilder.buildPersonalizedFallback(context, content);
         }
-        var assistantMessage = repository.save(new AssistantMessage(userId, AssistantMessage.Role.ASSISTANT, response, true));
+        var assistantMessage = new AssistantMessage(userId, AssistantMessage.Role.ASSISTANT, response, true);
+        if (mode == OpenAIClient.Mode.LIVE) {
+            assistantMessage = repository.save(assistantMessage);
+        }
         return new AssistantReply(assistantMessage, mode, evidenceCount, evidenceCount > 0);
     }
 

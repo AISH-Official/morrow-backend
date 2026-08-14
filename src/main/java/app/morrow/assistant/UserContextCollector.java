@@ -61,7 +61,9 @@ public class UserContextCollector {
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);
         var recentTimelines = timelines.findRecentByUserId(userId, weekAgo);
         var recentRecommendations = recommendationRepository.findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(userId, weekAgo);
-        var recentMessages = messageRepository.findTop24ByUserIdOrderByCreatedAtDesc(userId);
+        var recentMessages = messageRepository.findTop24ByUserIdOrderByCreatedAtDesc(userId).stream()
+                .filter(message -> !isGeneratedFallback(message))
+                .toList();
         var feedbackSummary = recentRecommendations.stream()
                 .flatMap(recommendation -> feedbackRepository.findByRecommendationId(recommendation.getId()).stream())
                 .collect(Collectors.toList());
@@ -77,6 +79,15 @@ public class UserContextCollector {
                 recentMessages,
                 memories
         );
+    }
+
+    static boolean isGeneratedFallback(AssistantMessage message) {
+        if (message.getRole() != AssistantMessage.Role.ASSISTANT) return false;
+        var content = message.getContent();
+        if (content == null) return false;
+        return content.startsWith("실시간 답변이 잠시 늦어져 저장된")
+                || content.startsWith("지금은 생성형 AI 연결 없이")
+                || content.startsWith("최근 수면 관련 피로 기록을 참고했어요.");
     }
 
     public record UserContext(

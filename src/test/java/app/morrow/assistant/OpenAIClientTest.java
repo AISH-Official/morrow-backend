@@ -3,6 +3,7 @@ package app.morrow.assistant;
 import com.theokanning.openai.OpenAiError;
 import com.theokanning.openai.OpenAiHttpException;
 import com.theokanning.openai.completion.chat.ChatCompletionChoice;
+import com.theokanning.openai.completion.chat.ChatCompletionRequest;
 import com.theokanning.openai.completion.chat.ChatCompletionResult;
 import com.theokanning.openai.completion.chat.ChatMessage;
 import com.theokanning.openai.service.OpenAiService;
@@ -14,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -84,6 +86,26 @@ class OpenAIClientTest {
         assertThat(OpenAIClient.isRetryable(httpError(429, "credit_balance_exhausted"))).isFalse();
         assertThat(OpenAIClient.isRetryable(httpError(429, "rate_limit_exceeded"))).isTrue();
         assertThat(OpenAIClient.isRetryable(httpError(503, "server_error"))).isTrue();
+    }
+
+    @Test
+    void retriesRateLimitedChatOnTheHigherCapacityMiniModel() {
+        var service = mock(OpenAiService.class);
+        when(service.createChatCompletion(any()))
+                .thenThrow(httpError(429, "rate_limit_exceeded"))
+                .thenReturn(completion("정상 응답입니다."));
+        var client = new OpenAIClient("test-key", "gpt-4o", true, service, service, ignored -> {});
+
+        var result = client.generateResponse("system", "context", "message");
+
+        assertThat(result.mode()).isEqualTo(OpenAIClient.Mode.LIVE);
+        var order = inOrder(service);
+        order.verify(service).createChatCompletion(org.mockito.ArgumentMatchers.argThat(
+                request -> ((ChatCompletionRequest) request).getModel().equals("gpt-4o")
+        ));
+        order.verify(service).createChatCompletion(org.mockito.ArgumentMatchers.argThat(
+                request -> ((ChatCompletionRequest) request).getModel().equals("gpt-4o-mini")
+        ));
     }
 
     private ChatCompletionResult completion(String content) {
