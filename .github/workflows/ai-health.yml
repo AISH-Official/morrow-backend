@@ -1,0 +1,73 @@
+name: Production OpenAI health
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify OpenAI runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$SSH_KEY_B64" | base64 --decode > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Check runtime configuration and OpenAI response
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh ec2-user@"$EC2_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          environment_file=/etc/morrow-openai.env
+          probe_file="$(mktemp)"
+          trap 'rm -f "$probe_file"' EXIT
+
+          sudo systemctl is-active morrow-api
+          test -s "$environment_file" || sudo test -s "$environment_file"
+          enabled="$(sudo sed -n 's/^OPENAI_ENABLED=//p' "$environment_file" | tail -1)"
+          model="$(sudo sed -n 's/^OPENAI_MODEL=//p' "$environment_file" | tail -1)"
+          api_key="$(sudo sed -n 's/^OPENAI_API_KEY=//p' "$environment_file" | tail -1)"
+
+          printf 'openai_enabled=%s\n' "$enabled"
+          printf 'openai_model=%s\n' "$model"
+          printf 'openai_key_configured=%s\n' "$([ -n "$api_key" ] && printf true || printf false)"
+          printf 'openai_key_length=%s\n' "${#api_key}"
+
+          printf '%s\n' 'recent_application_failures:'
+          sudo journalctl -u morrow-api --since '3 hours ago' --no-pager \
+            | grep -E 'OpenAI assistant configured|OpenAI transient failure|OpenAI request failed' \
+            | sed -E 's/sk-[A-Za-z0-9_-]+/[REDACTED]/g' \
+            | tail -n 100 || true
+
+          payload="$(printf '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with OK only.\"}],\"max_tokens\":8,\"temperature\":0}' "$model")"
+          http_status="$(curl --silent --show-error --max-time 30 \
+            --output "$probe_file" --write-out '%{http_code}' \
+            https://api.openai.com/v1/chat/completions \
+            -H "Authorization: Bearer $api_key" \
+            -H 'Content-Type: application/json' \
+            --data "$payload")"
+          printf 'openai_http_status=%s\n' "$http_status"
+
+          PROBE_FILE="$probe_file" python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["PROBE_FILE"], encoding="utf-8") as source:
+              payload = json.load(source)
+          error = payload.get("error") or {}
+          print("openai_error_type=" + str(error.get("type") or ""))
+          print("openai_error_code=" + str(error.get("code") or ""))
+          print("openai_live_response=" + str(bool(payload.get("choices"))).lower())
+          PY
+          REMOTE
