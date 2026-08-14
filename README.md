@@ -12,7 +12,7 @@ Morrow의 Java 21·Spring Boot API입니다. Apple Watch, iPhone, 웹에서 들�
 | Runtime | Java 21, Spring Boot 3.5.4 |
 | API | Spring MVC, Bean Validation |
 | Persistence | Spring Data JPA, H2, PostgreSQL |
-| AI | OpenAI Chat Completions, 안전 필터, 사용자별 컨텍스트 메모리 |
+| AI | OpenAI Responses API, 역할별 모델 라우팅, 안전 필터, 사용자별 컨텍스트 메모리 |
 | Notification | APNs token authentication, iOS·watchOS device token 관리 |
 | Operations | Spring Boot Actuator, Maven, GitHub Actions |
 
@@ -95,14 +95,14 @@ Watch · iPhone · Web
 ### 1. 기기 등록과 페어링
 
 ```text
-POST /auth/device
-  → 기기별 access token + pairing code 발급
-  → 서버에는 원문 토큰 대신 SHA-256 hash 저장
+POST /auth/account
+  → 처음과 이후 로그인 모두 accountId를 사용
+  → 기기별 access token 발급, 서버에는 SHA-256 hash만 저장
 
-POST /auth/pair
-  → iPhone의 pairing code로 Watch 또는 Web 연결
-  → 모든 기기가 같은 userId 사용
-  → 연결 코드는 10분 동안만 유효하며 연결된 기기는 개별 해제 가능
+POST /auth/pairing-code → POST /auth/pair
+  → 로그인 후 설정 화면에서만 연결 코드 생성·입력
+  → iPhone, Watch, Web을 같은 userId에 영구 연결
+  → 코드는 짧게 만료되지만 연결은 로그아웃·기기 해제 전까지 유지
 
 POST /auth/logout
   → 현재 기기의 device session 삭제
@@ -151,8 +151,10 @@ AI 추천은 `BREATH`, `WALK`, `WATER_WALK`, `STRETCH`, `FOCUS`, `SCREEN_BREAK` 
   → 위기·의료 표현 SafetyFilter
   → 최근 7일 체크인·타임라인·추천·피드백
   → 최근 24시간 대화 + 활성 UserMemory
-  → OpenAI 요청
-  → 실패·비활성·키 미설정 시 개인화 fallback
+  → OpenAI Responses API 요청
+  → 채팅은 gpt-5.6-sol, 추천·짧은 알림은 gpt-5.6-terra
+  → 재시도 가능한 429·타임아웃·5xx는 gpt-5.6-luna로 대체
+  → 비활성·연결 실패 시 안전한 개인화 fallback
   → 대화 기록 저장
 ```
 
@@ -194,7 +196,9 @@ AI 추천은 `BREATH`, `WALK`, `WATER_WALK`, `STRETCH`, `FOCUS`, `SCREEN_BREAK` 
 
 | Method | Path | 기능 |
 | --- | --- | --- |
-| `POST` | `/auth/device` | 기기 세션 등록과 토큰·페어링 코드 발급 |
+| `POST` | `/auth/account` | 계정 ID 로그인과 기기 Bearer 세션 발급 |
+| `POST` | `/auth/pairing-code` | 로그인한 기기의 설정용 연결 코드 갱신 |
+| `POST` | `/auth/device` | 로컬·호환용 기기 세션 등록 |
 | `POST` | `/auth/pair` | 다른 기기를 기존 사용자에게 연결 |
 | `POST` | `/health/snapshots` | HealthKit 파생 건강 요약 저장 |
 | `POST` | `/check-ins` | 체크인·타임라인·추천·학습 생성 |
