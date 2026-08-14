@@ -196,14 +196,14 @@ public class PromptBuilder {
                         && memory.getPositiveEvidence() > memory.getNegativeEvidence())
                 .findFirst();
         if (positive.isPresent()) {
-            return "지금은 생성형 AI 연결 없이 개인화 기록으로 답하고 있어요. 이전 피드백에서는 "
+            return "실시간 답변이 잠시 늦어져 저장된 개인화 기록으로 먼저 도와드릴게요. 이전 피드백에서는 "
                     + positive.get().getSummary()
                     + "으로 남아 있어요. 현재 상태에 무리가 없다면 같은 방법을 짧게 시도해 볼까요?";
         }
         if (message.matches(".*(잠|수면|피곤).*")) {
             return "최근 수면 관련 피로 기록을 참고했어요. 지금은 물 한 잔을 마시고 7분만 가볍게 움직인 뒤 상태를 다시 확인해 보세요.";
         }
-        return "지금은 생성형 AI 연결 없이 저장된 개인 기록으로 답하고 있어요. 현재 상태를 체크인하면 반복 패턴과 도움이 된 방법을 다음 답변부터 반영할게요.";
+        return "실시간 답변이 잠시 늦어져 저장된 개인 기록으로 먼저 도와드릴게요. 현재 상태를 체크인하면 반복 패턴과 도움이 된 방법을 다음 답변부터 반영할게요.";
     }
 
     private String translateStatus(CheckIn.Status status) {
