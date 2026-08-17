@@ -7,6 +7,8 @@ import app.morrow.checkin.CheckInRepository;
 import app.morrow.assistant.AssistantService;
 import app.morrow.assistant.OpenAIClient;
 import app.morrow.auth.AccountAuthService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -15,6 +17,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
 public class HealthPushListener {
+    private static final Logger log = LoggerFactory.getLogger(HealthPushListener.class);
+    private static final int RULE_ALERT_LOAD_THRESHOLD = 55;
+
     private final PushNotificationService notifications;
     private final RecoveryScoreCalculator recoveryScores;
     private final HealthSignalSnapshotRepository healthSnapshots;
@@ -41,12 +46,25 @@ public class HealthPushListener {
         if (accounts.aiHealthConsent(snapshot.getUserId())) {
             var insight = assistant.generateProactiveInsight(snapshot.getUserId());
             if (insight.mode() == OpenAIClient.Mode.LIVE) {
-                if (insight.shouldNotify()) notifications.sendActionableRecoveryAlert(snapshot, load, reason, "AI");
-                return;
+                if (insight.shouldNotify()) {
+                    log.info("Sending AI recovery alert. userId={}, load={}", snapshot.getUserId(), load);
+                    notifications.sendActionableRecoveryAlert(snapshot, load, reason, "AI");
+                    return;
+                }
+                // AI skip is honored in the mid band, but a high load means clear
+                // strain signals, so fall through to the rule-based alert instead
+                // of dropping the notification entirely.
+                if (load < RULE_ALERT_LOAD_THRESHOLD) {
+                    log.info("Recovery alert suppressed by AI skip. userId={}, load={}, reason={}", snapshot.getUserId(), load, insight.reason());
+                    return;
+                }
+                log.info("AI skipped at high load; using rule-based alert. userId={}, load={}", snapshot.getUserId(), load);
+            } else {
+                log.info("AI unavailable for recovery alert; using rule-based path. userId={}, load={}, reason={}", snapshot.getUserId(), load, insight.reason());
             }
         }
 
-        if (load >= 55) notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
+        if (load >= RULE_ALERT_LOAD_THRESHOLD) notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
     }
 
 }
