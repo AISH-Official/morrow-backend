@@ -69,6 +69,10 @@ public class AssistantService {
     }
 
     public ProactiveInsight generateProactiveInsight(String userId) {
+        return generateProactiveInsight(userId, null);
+    }
+
+    public ProactiveInsight generateProactiveInsight(String userId, OffsetDateTime lastRecoveryAlertAt) {
         var context = contextCollector.collectProactiveContext(userId);
         var hasRecentSignals = !context.recentHealthSnapshots().isEmpty() || !context.recentCheckIns().isEmpty();
         if (!hasRecentSignals) {
@@ -80,7 +84,7 @@ public class AssistantService {
                 userId,
                 promptBuilder.buildSystemPrompt() + "\n\n" + promptBuilder.buildProactiveNotificationInstruction(),
                 promptBuilder.buildUserContextPrompt(context),
-                "지금 사용자에게 선제적 웰니스 알림이 필요한지 판단해 주세요."
+                "지금 사용자에게 선제적 웰니스 알림이 필요한지 판단해 주세요. " + lastAlertNote(lastRecoveryAlertAt)
         );
         var content = generated.content() == null ? "" : generated.content().strip();
         if (generated.mode() != OpenAIClient.Mode.LIVE || content.isBlank() || isSkipDirective(content)) {
@@ -97,6 +101,19 @@ public class AssistantService {
         }
         log.info("Proactive insight generated. userId={}, mode={}", userId, generated.mode());
         return new ProactiveInsight(true, actionTitle(content), content, generated.mode(), "RECENT_WELLNESS_CONTEXT");
+    }
+
+    /**
+     * There is no fixed cooldown on AI recovery alerts; the model regulates its
+     * own send frequency, so it must know how recently the user was notified.
+     */
+    static String lastAlertNote(OffsetDateTime lastRecoveryAlertAt) {
+        if (lastRecoveryAlertAt == null) return "참고: 최근 발송한 회복 알림이 없습니다.";
+        var minutes = Math.max(1, java.time.Duration.between(lastRecoveryAlertAt, OffsetDateTime.now()).toMinutes());
+        if (minutes < 60) return "참고: 마지막 회복 알림을 약 " + minutes + "분 전에 보냈습니다.";
+        var hours = minutes / 60;
+        if (hours < 48) return "참고: 마지막 회복 알림을 약 " + hours + "시간 전에 보냈습니다.";
+        return "참고: 마지막 회복 알림을 보낸 지 이틀 이상 지났습니다.";
     }
 
     /**
