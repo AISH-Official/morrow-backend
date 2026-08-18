@@ -40,7 +40,7 @@ class HealthPushListenerTest {
         checkIns = mock(CheckInRepository.class);
         assistant = mock(AssistantService.class);
         accounts = mock(AccountAuthService.class);
-        listener = new HealthPushListener(notifications, recoveryScores, healthSnapshots, checkIns, assistant, accounts, "Asia/Seoul");
+        listener = new HealthPushListener(notifications, recoveryScores, healthSnapshots, checkIns, assistant, accounts, "Asia/Seoul", 20);
         snapshot = new HealthSignalSnapshot("user-a", "snapshot-a", HealthSignalSnapshot.Source.WATCH, 300, 92.0, 81.0, 28.0, 1200.0, 80.0, 5.0, 500.0, 1.0, 18.0, 97.0, OffsetDateTime.now());
         when(healthSnapshots.findTop12ByUserIdOrderByRecordedAtDesc("user-a")).thenReturn(List.of(snapshot));
         when(checkIns.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(anyString(), any())).thenReturn(List.of());
@@ -56,6 +56,28 @@ class HealthPushListenerTest {
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
         verify(notifications).sendActionableRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.", "AI");
+    }
+
+    @Test
+    void evaluatesWithAiAtLightLoadAndSendsWhenAiDecidesSo() {
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(75, "NORMAL", true, "MEDIUM", List.of("걸음이 같은 시간대보다 적어요.")));
+        when(accounts.aiHealthConsent("user-a")).thenReturn(true);
+        when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(true, "지금 잠깐 걸어볼까요?", "잠깐 걸어보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+
+        listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
+
+        verify(notifications).sendActionableRecoveryAlert(snapshot, 25, "걸음이 같은 시간대보다 적어요.", "AI");
+    }
+
+    @Test
+    void skipsEvaluationBelowConfiguredMinimumLoad() {
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(90, "NORMAL", true, "HIGH", List.of()));
+        when(accounts.aiHealthConsent("user-a")).thenReturn(true);
+
+        listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
+
+        verify(assistant, never()).generateProactiveInsight(anyString());
+        verify(notifications, never()).sendActionableRecoveryAlert(any(), anyInt(), anyString(), anyString());
     }
 
     @Test
