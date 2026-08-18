@@ -13,10 +13,12 @@ import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,28 +47,44 @@ class HealthPushListenerTest {
         when(healthSnapshots.findTop12ByUserIdOrderByRecordedAtDesc("user-a")).thenReturn(List.of(snapshot));
         when(checkIns.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(anyString(), any())).thenReturn(List.of());
         when(notifications.canSendRecoveryAlert("user-a")).thenReturn(true);
+        when(notifications.canEvaluateAiRecoveryAlert("user-a")).thenReturn(true);
+        when(notifications.lastRecoveryAlertAt("user-a")).thenReturn(Optional.empty());
     }
 
     @Test
     void sendsWhenConsentedAiDecidesNotificationIsUseful() {
         when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(55, "MODERATE", true, "HIGH", List.of("수면이 최근 기준보다 짧아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications).sendActionableRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.", "AI");
+        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.");
     }
 
     @Test
     void evaluatesWithAiAtLightLoadAndSendsWhenAiDecidesSo() {
         when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(75, "NORMAL", true, "MEDIUM", List.of("걸음이 같은 시간대보다 적어요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(true, "지금 잠깐 걸어볼까요?", "잠깐 걸어보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(true, "지금 잠깐 걸어볼까요?", "잠깐 걸어보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications).sendActionableRecoveryAlert(snapshot, 25, "걸음이 같은 시간대보다 적어요.", "AI");
+        verify(notifications).sendAiRecoveryAlert(snapshot, 25, "걸음이 같은 시간대보다 적어요.");
+    }
+
+    @Test
+    void aiAlertIgnoresRuleCooldownAndReceivesLastAlertTime() {
+        var lastAlertAt = OffsetDateTime.now().minusMinutes(90);
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(55, "MODERATE", true, "HIGH", List.of("수면이 최근 기준보다 짧아요.")));
+        when(accounts.aiHealthConsent("user-a")).thenReturn(true);
+        when(notifications.canSendRecoveryAlert("user-a")).thenReturn(false);
+        when(notifications.lastRecoveryAlertAt("user-a")).thenReturn(Optional.of(lastAlertAt));
+        when(assistant.generateProactiveInsight("user-a", lastAlertAt)).thenReturn(new AssistantService.ProactiveInsight(true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+
+        listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
+
+        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.");
     }
 
     @Test
@@ -76,7 +94,8 @@ class HealthPushListenerTest {
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(assistant, never()).generateProactiveInsight(anyString());
+        verify(assistant, never()).generateProactiveInsight(anyString(), any());
+        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString());
         verify(notifications, never()).sendActionableRecoveryAlert(any(), anyInt(), anyString(), anyString());
     }
 
@@ -84,10 +103,11 @@ class HealthPushListenerTest {
     void respectsAiSkipDecisionInMidLoadBand() {
         when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(60, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
+        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString());
         verify(notifications, never()).sendActionableRecoveryAlert(any(), anyInt(), anyString(), anyString());
     }
 
@@ -95,7 +115,7 @@ class HealthPushListenerTest {
     void fallsBackToRuleAlertWhenAiSkipsAtHighLoad() {
         when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(45, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
@@ -109,7 +129,7 @@ class HealthPushListenerTest {
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(assistant, never()).generateProactiveInsight(anyString());
+        verify(assistant, never()).generateProactiveInsight(anyString(), any());
         verify(notifications).sendActionableRecoveryAlert(snapshot, 60, "안정 심박이 최근 기준보다 높아요.", "MEDIUM");
     }
 }

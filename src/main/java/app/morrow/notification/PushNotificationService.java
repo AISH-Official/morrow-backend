@@ -59,11 +59,33 @@ public class PushNotificationService {
     @Transactional(readOnly = true)
     public boolean canSendRecoveryAlert(String userId) {
         var now = OffsetDateTime.now();
-        var localHour = now.atZoneSameInstant(timeZone).getHour();
-        if (localHour >= 22 || localHour < 8) return false;
+        if (inQuietHours(now)) return false;
         var threshold = now.minusHours(6);
         return repository.findByUserIdAndActiveTrue(userId).stream()
                 .anyMatch(device -> device.getLastNotifiedAt() == null || !device.getLastNotifiedAt().isAfter(threshold));
+    }
+
+    /**
+     * The AI judge regulates its own send frequency, so this gate only avoids
+     * pointless OpenAI calls: outside quiet hours and with at least one device.
+     */
+    @Transactional(readOnly = true)
+    public boolean canEvaluateAiRecoveryAlert(String userId) {
+        if (inQuietHours(OffsetDateTime.now())) return false;
+        return !repository.findByUserIdAndActiveTrue(userId).isEmpty();
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<OffsetDateTime> lastRecoveryAlertAt(String userId) {
+        return repository.findByUserIdAndActiveTrue(userId).stream()
+                .map(PushDevice::getLastNotifiedAt)
+                .filter(java.util.Objects::nonNull)
+                .max(java.util.Comparator.naturalOrder());
+    }
+
+    private boolean inQuietHours(OffsetDateTime now) {
+        var localHour = now.atZoneSameInstant(timeZone).getHour();
+        return localHour >= 22 || localHour < 8;
     }
 
     public DispatchResult sendHourlyCheckInReminder(String userId) {
@@ -79,7 +101,8 @@ public class PushNotificationService {
         return switch (kind) {
             case RECOVERY -> within(device.getLastNotifiedAt(), now, Duration.ofHours(6));
             case CHECK_IN -> within(device.getLastCheckInNotifiedAt(), now, Duration.ofMinutes(50));
-            case GENERAL -> false;
+            // Frequency is decided by the AI judge, which sees the last alert time.
+            case AI_RECOVERY, GENERAL -> false;
         };
     }
 
@@ -88,7 +111,7 @@ public class PushNotificationService {
     }
 
     private void markDelivered(PushDevice device, DeliveryKind kind, OffsetDateTime now) {
-        if (kind == DeliveryKind.RECOVERY) device.markRecoveryNotified(now);
+        if (kind == DeliveryKind.RECOVERY || kind == DeliveryKind.AI_RECOVERY) device.markRecoveryNotified(now);
         if (kind == DeliveryKind.CHECK_IN) device.markCheckInNotified(now);
     }
 
@@ -101,6 +124,14 @@ public class PushNotificationService {
     }
 
     public DispatchResult sendActionableRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason, String confidence) {
+        return sendActionableRecoveryAlert(snapshot, load, reason, confidence, DeliveryKind.RECOVERY);
+    }
+
+    public DispatchResult sendAiRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason) {
+        return sendActionableRecoveryAlert(snapshot, load, reason, "AI", DeliveryKind.AI_RECOVERY);
+    }
+
+    private DispatchResult sendActionableRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason, String confidence, DeliveryKind kind) {
         var defaultAction = RecoveryAttempt.Action.BREATH;
         var trigger = "RECOVERY_LOAD";
         if (snapshot.getSleepMinutes() != null && snapshot.getSleepMinutes() > 0 && snapshot.getSleepMinutes() < 360) {
@@ -124,7 +155,7 @@ public class PushNotificationService {
         return send(snapshot.getUserId(), content.title(), body, "MORROW_ACTION", Map.of(
                 "type", "RECOVERY", "action", selected.action().name(), "load", load,
                 "attemptId", attempt.getId().toString(), "reason", explanation,
-                "confidence", confidence, "durationSeconds", content.durationSeconds()), true);
+                "confidence", confidence, "durationSeconds", content.durationSeconds()), kind);
     }
 
     private ActionContent contentFor(RecoveryAttempt.Action action) {
@@ -143,5 +174,5 @@ public class PushNotificationService {
     public record DeviceResult(PushDevice.Platform platform, boolean accepted, int statusCode, String reason) {}
     public record Status(boolean enabled, boolean ready, long activeDevices, String iosTopic, String watchTopic) {}
     private record ActionContent(String title, String body, int durationSeconds) {}
-    private enum DeliveryKind { GENERAL, RECOVERY, CHECK_IN }
+    private enum DeliveryKind { GENERAL, RECOVERY, AI_RECOVERY, CHECK_IN }
 }

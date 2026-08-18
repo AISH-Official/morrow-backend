@@ -45,30 +45,37 @@ public class HealthPushListener {
         var reason = assessment.reasons().isEmpty() ? "최근 개인 기준에서 부담 신호가 감지됐어요." : assessment.reasons().get(0);
         // The rule-based path keeps its own >= 55 threshold below, so this gate
         // only decides how early the AI judge gets a chance to evaluate.
-        if (load < aiEvaluationMinLoad || !notifications.canSendRecoveryAlert(snapshot.getUserId())) return;
+        if (load < aiEvaluationMinLoad) return;
+        var userId = snapshot.getUserId();
 
-        if (accounts.aiHealthConsent(snapshot.getUserId())) {
-            var insight = assistant.generateProactiveInsight(snapshot.getUserId());
+        // AI alerts carry no fixed cooldown: the judge sees when the user was
+        // last notified and regulates its own send frequency.
+        if (accounts.aiHealthConsent(userId) && notifications.canEvaluateAiRecoveryAlert(userId)) {
+            var lastAlertAt = notifications.lastRecoveryAlertAt(userId).orElse(null);
+            var insight = assistant.generateProactiveInsight(userId, lastAlertAt);
             if (insight.mode() == OpenAIClient.Mode.LIVE) {
                 if (insight.shouldNotify()) {
-                    log.info("Sending AI recovery alert. userId={}, load={}", snapshot.getUserId(), load);
-                    notifications.sendActionableRecoveryAlert(snapshot, load, reason, "AI");
+                    log.info("Sending AI recovery alert. userId={}, load={}", userId, load);
+                    notifications.sendAiRecoveryAlert(snapshot, load, reason);
                     return;
                 }
                 // AI skip is honored in the mid band, but a high load means clear
                 // strain signals, so fall through to the rule-based alert instead
                 // of dropping the notification entirely.
                 if (load < RULE_ALERT_LOAD_THRESHOLD) {
-                    log.info("Recovery alert suppressed by AI skip. userId={}, load={}, reason={}", snapshot.getUserId(), load, insight.reason());
+                    log.info("Recovery alert suppressed by AI skip. userId={}, load={}, reason={}", userId, load, insight.reason());
                     return;
                 }
-                log.info("AI skipped at high load; using rule-based alert. userId={}, load={}", snapshot.getUserId(), load);
+                log.info("AI skipped at high load; using rule-based alert. userId={}, load={}", userId, load);
             } else {
-                log.info("AI unavailable for recovery alert; using rule-based path. userId={}, load={}, reason={}", snapshot.getUserId(), load, insight.reason());
+                log.info("AI unavailable for recovery alert; using rule-based path. userId={}, load={}, reason={}", userId, load, insight.reason());
             }
         }
 
-        if (load >= RULE_ALERT_LOAD_THRESHOLD) notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
+        // The non-AI path keeps the 6-hour cooldown because nothing else limits it.
+        if (load >= RULE_ALERT_LOAD_THRESHOLD && notifications.canSendRecoveryAlert(userId)) {
+            notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
+        }
     }
 
 }
