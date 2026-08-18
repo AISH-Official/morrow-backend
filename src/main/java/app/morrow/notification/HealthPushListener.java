@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -33,7 +35,13 @@ public class HealthPushListener {
         this.aiEvaluationMinLoad = aiEvaluationMinLoad;
     }
 
+    // REQUIRES_NEW is essential: this async listener runs outside any
+    // transaction, and reading HealthSignalSnapshot rows touches @Lob columns,
+    // which PostgreSQL refuses to stream in auto-commit mode. Without it every
+    // invocation dies with "Large Objects may not be used in auto-commit mode"
+    // before any alert logic runs.
     @Async
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onSnapshot(HealthSignalSnapshotService.HealthSnapshotCreatedEvent event) {
         var snapshot = event.snapshot();
