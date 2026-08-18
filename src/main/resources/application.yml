@@ -47,6 +47,7 @@ morrow:
   push:
     check-in-reminders-enabled: ${MORROW_CHECK_IN_REMINDERS_ENABLED:true}
     check-in-cron: "${MORROW_CHECK_IN_CRON:0 0 * * * *}"
+    ai-evaluation-min-load: ${MORROW_AI_EVALUATION_MIN_LOAD:20}
     apns:
       enabled: ${APNS_ENABLED:false}
       team-id: ${APNS_TEAM_ID:}
