@@ -54,8 +54,22 @@ public class UserContextCollector {
     }
 
     public UserContext collectContext(String userId) {
+        return collect(userId, includeHealthData);
+    }
+
+    /**
+     * Context for the proactive notification judge. That flow is triggered by
+     * health snapshots and only runs for users with AI health consent, so health
+     * data is included based on consent alone, independent of the server-wide
+     * include-health-data flag that governs the chat assistant.
+     */
+    public UserContext collectProactiveContext(String userId) {
+        return collect(userId, true);
+    }
+
+    private UserContext collect(String userId, boolean allowHealthData) {
         var weekAgo = OffsetDateTime.now().minusDays(7);
-        var recentHealthSnapshots = includeHealthData && accounts.aiHealthConsent(userId)
+        var recentHealthSnapshots = allowHealthData && accounts.aiHealthConsent(userId)
                 ? healthSnapshotRepository.findTop12ByUserIdOrderByRecordedAtDesc(userId)
                 : List.<HealthSignalSnapshot>of();
         var recentCheckIns = checkInRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, weekAgo);

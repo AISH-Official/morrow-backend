@@ -1,15 +1,19 @@
 package app.morrow.assistant;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import app.morrow.auth.AuthRateLimiter;
 
 @Service
 @Transactional
 public class AssistantService {
+    private static final Logger log = LoggerFactory.getLogger(AssistantService.class);
     private final AssistantMessageRepository repository;
     private final UserContextCollector contextCollector;
     private final PromptBuilder promptBuilder;
@@ -65,9 +69,10 @@ public class AssistantService {
     }
 
     public ProactiveInsight generateProactiveInsight(String userId) {
-        var context = contextCollector.collectContext(userId);
+        var context = contextCollector.collectProactiveContext(userId);
         var hasRecentSignals = !context.recentHealthSnapshots().isEmpty() || !context.recentCheckIns().isEmpty();
         if (!hasRecentSignals) {
+            log.info("Proactive insight skipped: no recent signals. userId={}", userId);
             return ProactiveInsight.skip(OpenAIClient.Mode.FALLBACK, "NO_RECENT_SIGNALS");
         }
 
@@ -78,13 +83,32 @@ public class AssistantService {
                 "지금 사용자에게 선제적 웰니스 알림이 필요한지 판단해 주세요."
         );
         var content = generated.content() == null ? "" : generated.content().strip();
-        if (generated.mode() != OpenAIClient.Mode.LIVE || content.equalsIgnoreCase("SKIP") || content.isBlank()) {
+        if (generated.mode() != OpenAIClient.Mode.LIVE || content.isBlank() || isSkipDirective(content)) {
+            log.info(
+                    "Proactive insight skipped. userId={}, mode={}, skipDirective={}",
+                    userId,
+                    generated.mode(),
+                    isSkipDirective(content)
+            );
             return ProactiveInsight.skip(generated.mode(), "AI_SKIPPED");
         }
         if (content.length() > 100) {
             content = content.substring(0, 100).strip();
         }
+        log.info("Proactive insight generated. userId={}, mode={}", userId, generated.mode());
         return new ProactiveInsight(true, actionTitle(content), content, generated.mode(), "RECENT_WELLNESS_CONTEXT");
+    }
+
+    /**
+     * The proactive prompt asks the model to answer with exactly SKIP, but models
+     * occasionally add punctuation or trailing whitespace (e.g. "SKIP.").
+     * Anything that starts with SKIP and carries no other words counts as a skip,
+     * so such variants never leak into a user-facing notification body.
+     */
+    static boolean isSkipDirective(String content) {
+        var normalized = content.strip().toUpperCase(Locale.ROOT);
+        if (!normalized.startsWith("SKIP")) return false;
+        return normalized.substring(4).chars().noneMatch(Character::isLetterOrDigit);
     }
 
     private String actionTitle(String content) {
