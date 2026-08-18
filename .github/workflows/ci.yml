@@ -60,6 +60,7 @@ jobs:
           OPENAI_FALLBACK_MODEL: ${{ secrets.OPENAI_FALLBACK_MODEL }}
           OPENAI_ENABLED: ${{ secrets.OPENAI_ENABLED }}
           MORROW_AI_INCLUDE_HEALTH_DATA: "true"
+          MORROW_AI_EVALUATION_MIN_LOAD: ${{ secrets.MORROW_AI_EVALUATION_MIN_LOAD }}
           MORROW_DEMO_LOGIN_ENABLED: ${{ secrets.MORROW_DEMO_LOGIN_ENABLED }}
           MORROW_DEMO_LOGIN_USERNAME: ${{ secrets.MORROW_DEMO_LOGIN_USERNAME }}
           MORROW_DEMO_LOGIN_PASSWORD: ${{ secrets.MORROW_DEMO_LOGIN_PASSWORD }}
@@ -80,6 +81,11 @@ jobs:
             true|false) ;;
             *) echo "MORROW_DEMO_LOGIN_ENABLED must be true or false" >&2; exit 1 ;;
           esac
+          # Optional secret; the application default (20) applies when unset.
+          ai_evaluation_min_load="${MORROW_AI_EVALUATION_MIN_LOAD:-20}"
+          case "$ai_evaluation_min_load" in
+            ''|*[!0-9]*) echo "MORROW_AI_EVALUATION_MIN_LOAD must be a non-negative integer" >&2; exit 1 ;;
+          esac
 
           {
             printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
@@ -88,6 +94,7 @@ jobs:
             printf 'OPENAI_FALLBACK_MODEL=%s\n' "$OPENAI_FALLBACK_MODEL"
             printf 'OPENAI_ENABLED=%s\n' "$OPENAI_ENABLED"
             printf 'MORROW_AI_INCLUDE_HEALTH_DATA=%s\n' "$MORROW_AI_INCLUDE_HEALTH_DATA"
+            printf 'MORROW_AI_EVALUATION_MIN_LOAD=%s\n' "$ai_evaluation_min_load"
             printf 'MORROW_DEMO_LOGIN_ENABLED=%s\n' "$MORROW_DEMO_LOGIN_ENABLED"
             printf 'MORROW_DEMO_LOGIN_USERNAME=%s\n' "$MORROW_DEMO_LOGIN_USERNAME"
             printf 'MORROW_DEMO_LOGIN_PASSWORD=%s\n' "$MORROW_DEMO_LOGIN_PASSWORD"
