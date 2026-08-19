@@ -125,6 +125,8 @@ iPhone / Watch 건강 요약
   → AFTER_COMMIT HealthSnapshotCreatedEvent
   → 수면·HRV·안정 심박 기반 recovery load 계산
   → 기준 이상이면 APNs 회복 알림
+  → 새 체크인 직후 생성된 AI Next Best Action도 APNs로 즉시 전달
+  → 최근 건강 신호는 30분마다 다시 평가해 새 스냅샷이 없어도 필요한 알림 재검토
 ```
 
 서버는 HealthKit 원본 표본이 아니라 앱에서 집계한 수면, 심박, HRV, 걸음, 활동 에너지, 운동 시간 등의 파생 요약을 저장합니다. 최근 수면은 시작·종료와 코어·깊은·REM·깨어있음 시간을, 최근 운동은 종류·구간·시간·에너지·거리·평균/최대 심박과 추정 강도를 함께 보관합니다.
@@ -271,8 +273,14 @@ mvn spring-boot:run
 | `MORROW_DEMO_LOGIN_PASSWORD` | 빈 값 | Secret으로 주입할 데모 비밀번호 |
 | `MORROW_DEMO_LOGIN_USER_ID` | `hackathon-demo` | 데모 계정이 사용할 내부 사용자 ID |
 | `APNS_ENABLED` | `false` | APNs 실제 전송 활성화 |
-| `MORROW_CHECK_IN_REMINDERS_ENABLED` | `true` | 오전 8시~오후 9시 매시간 체크인 푸시 활성화 |
-| `MORROW_CHECK_IN_CRON` | `0 0 * * * *` | 체크인 푸시 실행 주기(Spring cron) |
+| `MORROW_CHECK_IN_REMINDERS_ENABLED` | `true` | 일반 체크인 푸시 활성화 |
+| `MORROW_CHECK_IN_CRON` | `0 0 9,14,19 * * *` | 일반 체크인 푸시 실행 주기(Spring cron, KST) |
+| `MORROW_RECOVERY_EVALUATION_ENABLED` | `true` | 활성 APNs 사용자의 최근 신호 재평가 활성화 |
+| `MORROW_RECOVERY_EVALUATION_CRON` | `0 */30 8-21 * * *` | AI 회복 알림 재평가 주기(Spring cron, KST) |
+| `MORROW_RECOVERY_COOLDOWN_MINUTES` | `90` | 건강 신호 기반 회복 알림 최소 간격 |
+| `MORROW_RECOMMENDATION_COOLDOWN_MINUTES` | `30` | 새 체크인 추천 알림 최소 간격 |
+| `MORROW_HIGH_LOAD_FALLBACK_THRESHOLD` | `50` | AI가 건너뛰어도 안전 추천을 보내는 최소 회복 부하 |
+| `MORROW_MAX_HEALTH_SNAPSHOT_AGE_HOURS` | `24` | 정기 재평가에 사용할 건강 스냅샷 최대 나이 |
 | `APNS_TEAM_ID`, `APNS_KEY_ID` | 빈 값 | Apple token authentication 식별자 |
 | `APNS_PRIVATE_KEY`, `APNS_PRIVATE_KEY_PATH` | 빈 값 | APNs `.p8` 키 본문 또는 절대 경로 |
 | `APNS_IOS_TOPIC`, `APNS_WATCH_TOPIC` | 앱 bundle ID | iPhone·Watch APNs topic |

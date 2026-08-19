@@ -15,7 +15,7 @@ public class HourlyCheckInScheduler {
         this.notifications = notifications;
     }
 
-    @Scheduled(cron = "${morrow.push.check-in-cron:0 0 * * * *}", zone = "${morrow.time-zone:Asia/Seoul}")
+    @Scheduled(cron = "${morrow.push.check-in-cron:0 0 9,14,19 * * *}", zone = "${morrow.time-zone:Asia/Seoul}")
     public void remindActiveUsers() {
         devices.findDistinctActiveUserIds().forEach(notifications::sendHourlyCheckInReminder);
     }

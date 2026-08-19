@@ -2,8 +2,11 @@ package app.morrow.notification;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import app.morrow.health.HealthSignalSnapshot;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,18 +15,40 @@ import java.time.Duration;
 import app.morrow.personalization.PersonalizationService;
 import app.morrow.recovery.RecoveryAttempt;
 import app.morrow.recovery.RecoveryAttemptService;
+import app.morrow.recommendation.Recommendation;
 
 @Service
 @Transactional
 public class PushNotificationService {
+    private static final Logger log = LoggerFactory.getLogger(PushNotificationService.class);
     private final PushDeviceRepository repository;
     private final ApnsGateway gateway;
     private final ApnsProperties properties;
     private final ZoneId timeZone;
     private final PersonalizationService personalization;
     private final RecoveryAttemptService recoveryAttempts;
+    private final Duration recoveryCooldown;
+    private final Duration recommendationCooldown;
 
-    public PushNotificationService(PushDeviceRepository repository, ApnsGateway gateway, ApnsProperties properties, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone, PersonalizationService personalization, RecoveryAttemptService recoveryAttempts) { this.repository = repository; this.gateway = gateway; this.properties = properties; this.timeZone = ZoneId.of(timeZone); this.personalization = personalization; this.recoveryAttempts = recoveryAttempts; }
+    public PushNotificationService(
+            PushDeviceRepository repository,
+            ApnsGateway gateway,
+            ApnsProperties properties,
+            @Value("${morrow.time-zone:Asia/Seoul}") String timeZone,
+            PersonalizationService personalization,
+            RecoveryAttemptService recoveryAttempts,
+            @Value("${morrow.push.recovery-cooldown-minutes:90}") long recoveryCooldownMinutes,
+            @Value("${morrow.push.recommendation-cooldown-minutes:30}") long recommendationCooldownMinutes
+    ) {
+        this.repository = repository;
+        this.gateway = gateway;
+        this.properties = properties;
+        this.timeZone = ZoneId.of(timeZone);
+        this.personalization = personalization;
+        this.recoveryAttempts = recoveryAttempts;
+        this.recoveryCooldown = Duration.ofMinutes(Math.max(15, recoveryCooldownMinutes));
+        this.recommendationCooldown = Duration.ofMinutes(Math.max(10, recommendationCooldownMinutes));
+    }
 
     public PushDevice register(String userId, String token, PushDevice.Platform platform, PushDevice.Environment environment) {
         var normalized = token.replaceAll("[^0-9a-fA-F]", "").toLowerCase();
@@ -45,22 +70,27 @@ public class PushNotificationService {
     private DispatchResult send(String userId, String title, String body, String category, Map<String, Object> data, DeliveryKind kind) {
         var results = new ArrayList<DeviceResult>(); var now = OffsetDateTime.now();
         var localHour = now.atZoneSameInstant(timeZone).getHour();
-        if (kind != DeliveryKind.GENERAL && (localHour >= 22 || localHour < 8)) return new DispatchResult(0, 0, java.util.List.of());
-        for (var device : repository.findByUserIdAndActiveTrue(userId)) {
+        if (kind != DeliveryKind.GENERAL && (localHour >= 22 || localHour < 8)) {
+            log.info("Push skipped during quiet hours: kind={}", kind);
+            return new DispatchResult(0, 0, java.util.List.of());
+        }
+        for (var device : repository.findActiveForDelivery(userId)) {
             if (onCooldown(device, kind, now)) { results.add(new DeviceResult(device.getPlatform(), false, 429, "Cooldown")); continue; }
             var result = gateway.send(device, title, body, category, data);
             if (result.accepted()) markDelivered(device, kind, now);
             if (result.statusCode() == 410 || "BadDeviceToken".equals(result.reason()) || "Unregistered".equals(result.reason())) device.deactivate();
             results.add(new DeviceResult(device.getPlatform(), result.accepted(), result.statusCode(), result.reason()));
         }
-        return new DispatchResult(results.size(), results.stream().filter(DeviceResult::accepted).count(), results);
+        var dispatch = new DispatchResult(results.size(), results.stream().filter(DeviceResult::accepted).count(), results);
+        log.info("Push dispatch completed: kind={}, attempted={}, accepted={}", kind, dispatch.attempted(), dispatch.accepted());
+        return dispatch;
     }
 
     @Transactional(readOnly = true)
     public boolean canSendRecoveryAlert(String userId) {
         var now = OffsetDateTime.now();
         if (inQuietHours(now)) return false;
-        var threshold = now.minusHours(6);
+        var threshold = now.minus(recoveryCooldown);
         return repository.findByUserIdAndActiveTrue(userId).stream()
                 .anyMatch(device -> device.getLastNotifiedAt() == null || !device.getLastNotifiedAt().isAfter(threshold));
     }
@@ -99,7 +129,8 @@ public class PushNotificationService {
 
     private boolean onCooldown(PushDevice device, DeliveryKind kind, OffsetDateTime now) {
         return switch (kind) {
-            case RECOVERY -> within(device.getLastNotifiedAt(), now, Duration.ofHours(6));
+            case RECOVERY -> within(device.getLastNotifiedAt(), now, recoveryCooldown);
+            case RECOMMENDATION -> within(device.getLastNotifiedAt(), now, recommendationCooldown);
             case CHECK_IN -> within(device.getLastCheckInNotifiedAt(), now, Duration.ofMinutes(50));
             // Frequency is decided by the AI judge, which sees the last alert time.
             case AI_RECOVERY, GENERAL -> false;
@@ -111,7 +142,9 @@ public class PushNotificationService {
     }
 
     private void markDelivered(PushDevice device, DeliveryKind kind, OffsetDateTime now) {
-        if (kind == DeliveryKind.RECOVERY || kind == DeliveryKind.AI_RECOVERY) device.markRecoveryNotified(now);
+        if (kind == DeliveryKind.RECOVERY || kind == DeliveryKind.AI_RECOVERY || kind == DeliveryKind.RECOMMENDATION) {
+            device.markRecoveryNotified(now);
+        }
         if (kind == DeliveryKind.CHECK_IN) device.markCheckInNotified(now);
     }
 
@@ -124,38 +157,85 @@ public class PushNotificationService {
     }
 
     public DispatchResult sendActionableRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason, String confidence) {
-        return sendActionableRecoveryAlert(snapshot, load, reason, confidence, DeliveryKind.RECOVERY);
-    }
-
-    public DispatchResult sendAiRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason) {
-        return sendActionableRecoveryAlert(snapshot, load, reason, "AI", DeliveryKind.AI_RECOVERY);
-    }
-
-    private DispatchResult sendActionableRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason, String confidence, DeliveryKind kind) {
-        var defaultAction = RecoveryAttempt.Action.BREATH;
-        var trigger = "RECOVERY_LOAD";
-        if (snapshot.getSleepMinutes() != null && snapshot.getSleepMinutes() > 0 && snapshot.getSleepMinutes() < 360) {
-            defaultAction = RecoveryAttempt.Action.WATER_WALK;
-            trigger = "SHORT_SLEEP";
-        } else if (snapshot.getSteps() != null && snapshot.getSteps() < 2500) {
-            defaultAction = RecoveryAttempt.Action.WALK;
-            trigger = "LOW_ACTIVITY";
-        } else if (snapshot.getRestingHeartRate() != null && snapshot.getRestingHeartRate() > 78) {
-            defaultAction = RecoveryAttempt.Action.BREATH;
-            trigger = "ELEVATED_RESTING_HEART_RATE";
-        } else if (snapshot.getExerciseMinutes() != null && snapshot.getExerciseMinutes() >= 45) {
-            defaultAction = RecoveryAttempt.Action.STRETCH;
-            trigger = "POST_EXERCISE";
-        }
-        var selected = personalization.personalizeProactiveAction(snapshot.getUserId(), defaultAction);
+        var defaultSelection = defaultActionFor(snapshot);
+        var selected = personalization.personalizeProactiveAction(snapshot.getUserId(), defaultSelection.action());
         var content = contentFor(selected.action());
         var explanation = reason == null || reason.isBlank() ? "최근 개인 기준에서 부담 신호가 감지됐어요." : reason;
         var body = explanation + " " + content.body() + (selected.personalized() ? " " + selected.rationale() : "");
-        var attempt = recoveryAttempts.suggest(snapshot.getUserId(), selected.action(), trigger, explanation, confidence, RecoveryAttempt.Source.NOTIFICATION);
-        return send(snapshot.getUserId(), content.title(), body, "MORROW_ACTION", Map.of(
-                "type", "RECOVERY", "action", selected.action().name(), "load", load,
-                "attemptId", attempt.getId().toString(), "reason", explanation,
-                "confidence", confidence, "durationSeconds", content.durationSeconds()), kind);
+        return dispatchAction(snapshot.getUserId(), selected.action(), defaultSelection.trigger(), explanation, confidence,
+                content.title(), body, content.durationSeconds(), load, DeliveryKind.RECOVERY);
+    }
+
+    public DispatchResult sendAiRecoveryAlert(HealthSignalSnapshot snapshot, int load, String reason, String title, String body) {
+        var defaultSelection = defaultActionFor(snapshot);
+        var aiAction = actionFromCopy(title + " " + body, defaultSelection.action());
+        var selected = personalization.personalizeProactiveAction(snapshot.getUserId(), aiAction);
+        var fallbackContent = contentFor(selected.action());
+        var useAiCopy = selected.action() == aiAction && body != null && !body.isBlank();
+        var notificationTitle = useAiCopy ? cleanCopy(title, fallbackContent.title(), 80) : fallbackContent.title();
+        var notificationBody = useAiCopy ? cleanCopy(body, fallbackContent.body(), 180) : fallbackContent.body();
+        var explanation = reason == null || reason.isBlank() ? "최근 개인 기준에서 부담 신호가 감지됐어요." : reason;
+        return dispatchAction(snapshot.getUserId(), selected.action(), "AI_" + defaultSelection.trigger(), explanation, "AI",
+                notificationTitle, notificationBody, fallbackContent.durationSeconds(), load, DeliveryKind.AI_RECOVERY);
+    }
+
+    public DispatchResult sendRecommendationAlert(Recommendation recommendation) {
+        var action = recommendation.getAction();
+        var content = contentFor(action);
+        var title = cleanCopy(recommendation.getTitle(), content.title(), 80);
+        var rationale = cleanCopy(recommendation.getRationale(), "지금 상태에 맞는 짧은 회복 행동이에요.", 150);
+        var body = rationale + " 알림을 눌러 바로 시작할 수 있어요.";
+        return dispatchAction(recommendation.getUserId(), action, "CHECK_IN_RECOMMENDATION", rationale,
+                recommendation.getSource().name(), title, body, recommendation.getDurationSeconds(), null, DeliveryKind.RECOMMENDATION);
+    }
+
+    private DispatchResult dispatchAction(String userId, RecoveryAttempt.Action action, String trigger, String reason,
+                                          String confidence, String title, String body, int durationSeconds,
+                                          Integer load, DeliveryKind kind) {
+        var attempt = recoveryAttempts.prepareSuggestion(userId, action, trigger, reason, confidence, RecoveryAttempt.Source.NOTIFICATION);
+        var data = new LinkedHashMap<String, Object>();
+        data.put("type", "RECOVERY");
+        data.put("action", action.name());
+        data.put("attemptId", attempt.getId().toString());
+        data.put("reason", reason);
+        data.put("confidence", confidence);
+        data.put("durationSeconds", durationSeconds);
+        if (load != null) data.put("load", load);
+        var result = send(userId, title, body, "MORROW_ACTION", data, kind);
+        if (result.accepted() > 0) recoveryAttempts.recordDeliveredSuggestion(attempt);
+        return result;
+    }
+
+    private DefaultAction defaultActionFor(HealthSignalSnapshot snapshot) {
+        if (snapshot.getSleepMinutes() != null && snapshot.getSleepMinutes() > 0 && snapshot.getSleepMinutes() < 360) {
+            return new DefaultAction(RecoveryAttempt.Action.WATER_WALK, "SHORT_SLEEP");
+        }
+        if (snapshot.getSteps() != null && snapshot.getSteps() < 2500) {
+            return new DefaultAction(RecoveryAttempt.Action.WALK, "LOW_ACTIVITY");
+        }
+        if (snapshot.getRestingHeartRate() != null && snapshot.getRestingHeartRate() > 78) {
+            return new DefaultAction(RecoveryAttempt.Action.BREATH, "ELEVATED_RESTING_HEART_RATE");
+        }
+        if (snapshot.getExerciseMinutes() != null && snapshot.getExerciseMinutes() >= 45) {
+            return new DefaultAction(RecoveryAttempt.Action.STRETCH, "POST_EXERCISE");
+        }
+        return new DefaultAction(RecoveryAttempt.Action.BREATH, "RECOVERY_LOAD");
+    }
+
+    private RecoveryAttempt.Action actionFromCopy(String copy, RecoveryAttempt.Action fallback) {
+        var value = copy == null ? "" : copy;
+        if (value.contains("물")) return RecoveryAttempt.Action.WATER_WALK;
+        if (value.contains("걷") || value.contains("산책")) return RecoveryAttempt.Action.WALK;
+        if (value.contains("스트레칭") || value.contains("어깨") || value.contains("목")) return RecoveryAttempt.Action.STRETCH;
+        if (value.contains("집중") || value.contains("할 일")) return RecoveryAttempt.Action.FOCUS;
+        if (value.contains("화면") || value.contains("눈을")) return RecoveryAttempt.Action.SCREEN_BREAK;
+        if (value.contains("호흡") || value.contains("숨")) return RecoveryAttempt.Action.BREATH;
+        return fallback;
+    }
+
+    private String cleanCopy(String value, String fallback, int maxLength) {
+        var cleaned = value == null || value.isBlank() ? fallback : value.strip().replaceAll("\\s+", " ");
+        return cleaned.length() <= maxLength ? cleaned : cleaned.substring(0, maxLength).strip();
     }
 
     private ActionContent contentFor(RecoveryAttempt.Action action) {
@@ -174,5 +254,6 @@ public class PushNotificationService {
     public record DeviceResult(PushDevice.Platform platform, boolean accepted, int statusCode, String reason) {}
     public record Status(boolean enabled, boolean ready, long activeDevices, String iosTopic, String watchTopic) {}
     private record ActionContent(String title, String body, int durationSeconds) {}
-    private enum DeliveryKind { GENERAL, RECOVERY, AI_RECOVERY, CHECK_IN }
+    private record DefaultAction(RecoveryAttempt.Action action, String trigger) {}
+    private enum DeliveryKind { GENERAL, RECOVERY, AI_RECOVERY, RECOMMENDATION, CHECK_IN }
 }

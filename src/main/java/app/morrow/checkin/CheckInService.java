@@ -9,6 +9,7 @@ import app.morrow.timeline.TimelineService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -21,10 +22,11 @@ public class CheckInService {
  private final RecommendationService recommendationService;
  private final PersonalizationService personalizationService;
  private final AIRecommendationService aiRecommendations;
+ private final ApplicationEventPublisher events;
  private final ZoneId timeZone;
 
- public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService,AIRecommendationService aiRecommendations,@Value("${morrow.time-zone:Asia/Seoul}")String timeZone){
-  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;this.aiRecommendations=aiRecommendations;this.timeZone=ZoneId.of(timeZone);
+ public CheckInService(CheckInRepository repository,TimelineService timelineService,RecommendationService recommendationService,PersonalizationService personalizationService,AIRecommendationService aiRecommendations,ApplicationEventPublisher events,@Value("${morrow.time-zone:Asia/Seoul}")String timeZone){
+  this.repository=repository;this.timelineService=timelineService;this.recommendationService=recommendationService;this.personalizationService=personalizationService;this.aiRecommendations=aiRecommendations;this.events=events;this.timeZone=ZoneId.of(timeZone);
  }
 
  public CheckIn create(CreateCheckIn input){
@@ -40,8 +42,9 @@ public class CheckInService {
   var recommendation=recommendationFor(checkIn);
   var personalized=personalizationService.personalizeAction(userId,checkIn.getStatus(),recommendation.title(),recommendation.rationale());
   var selected=aiRecommendations.compose(userId,checkIn,personalized.title(),personalized.rationale(),personalized.personalized());
-  recommendationService.create(new RecommendationService.CreateRecommendation(userId,selected.title(),selected.rationale(),Recommendation.Status.ACTIVE,checkIn.getId(),selected.action(),selected.durationSeconds(),selected.source()));
+  var savedRecommendation=recommendationService.create(new RecommendationService.CreateRecommendation(userId,selected.title(),selected.rationale(),Recommendation.Status.ACTIVE,checkIn.getId(),selected.action(),selected.durationSeconds(),selected.source()));
   personalizationService.learnFromCheckIn(checkIn);
+  events.publishEvent(new CheckInRecommendationCreatedEvent(savedRecommendation));
   return checkIn;
  }
 
@@ -81,6 +84,7 @@ public class CheckInService {
  public record CreateCheckIn(String userId,String clientEventId,CheckIn.Status status,CheckIn.Cause cause,String note,CheckIn.Source source,OffsetDateTime recordedAt){
   public CreateCheckIn(String userId,CheckIn.Status status,CheckIn.Cause cause,String note,CheckIn.Source source,OffsetDateTime recordedAt){this(userId,null,status,cause,note,source,recordedAt);}
  }
+ public record CheckInRecommendationCreatedEvent(Recommendation recommendation){}
  private record SuggestedAction(String title,String rationale){}
  public static class CheckInNotFoundException extends RuntimeException{public CheckInNotFoundException(UUID id){super("Check-in not found: "+id);}}
 }
