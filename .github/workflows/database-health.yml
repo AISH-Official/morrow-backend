@@ -48,3 +48,132 @@ jobs:
           SELECT 'read_write_probe=OK' WHERE NOT pg_is_in_recovery();
           SQL
           REMOTE
+
+  push-test:
+    name: Send production APNs test
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$SSH_KEY_B64" | base64 --decode > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Send one test notification to every active push owner
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh ec2-user@"$EC2_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /tmp
+
+          current_device_id=""
+          cleanup_session() {
+            if [ -n "$current_device_id" ]; then
+              sudo -u postgres psql --dbname=morrow --set=ON_ERROR_STOP=1 \
+                --set=device_id="$current_device_id" <<'SQL' >/dev/null
+          DELETE FROM device_sessions WHERE device_id = :'device_id';
+          SQL
+              current_device_id=""
+            fi
+          }
+          trap cleanup_session EXIT
+
+          sudo -u postgres psql --dbname=morrow --set=ON_ERROR_STOP=1 <<'SQL' >/dev/null
+          DELETE FROM device_sessions WHERE device_id LIKE 'github-push-test-%';
+          SQL
+
+          active_devices="$(sudo -u postgres psql --dbname=morrow --tuples-only --no-align \
+            --command='SELECT count(*) FROM push_devices WHERE active = true;')"
+          active_users="$(sudo -u postgres psql --dbname=morrow --tuples-only --no-align \
+            --command='SELECT count(DISTINCT user_id) FROM push_devices WHERE active = true;')"
+          printf 'active_push_devices=%s\n' "$active_devices"
+          printf 'active_push_owners=%s\n' "$active_users"
+          if [ "$active_devices" -eq 0 ]; then
+            echo 'No active push devices are registered.' >&2
+            exit 1
+          fi
+
+          total_attempted=0
+          total_accepted=0
+          total_failed=0
+          owner_index=0
+
+          while IFS= read -r user_id; do
+            [ -n "$user_id" ] || continue
+            owner_index=$((owner_index + 1))
+            session_id="$(cat /proc/sys/kernel/random/uuid)"
+            current_device_id="github-push-test-$session_id"
+            raw_token="$(openssl rand -hex 32)"
+            token_hash="$(printf '%s' "$raw_token" | sha256sum | cut -d ' ' -f 1)"
+            pairing_code="$(openssl rand -hex 4 | tr '[:lower:]' '[:upper:]')"
+
+            sudo -u postgres psql --dbname=morrow --set=ON_ERROR_STOP=1 \
+              --set=session_id="$session_id" \
+              --set=device_id="$current_device_id" \
+              --set=user_id="$user_id" \
+              --set=token_hash="$token_hash" \
+              --set=pairing_code="$pairing_code" <<'SQL' >/dev/null
+          INSERT INTO device_sessions (
+            id, device_id, device_name, platform, user_id, token_hash, pairing_code,
+            created_at, last_seen_at, pairing_code_expires_at
+          ) VALUES (
+            :'session_id'::uuid, :'device_id', 'GitHub production push test', 'WEB', :'user_id',
+            :'token_hash', :'pairing_code', now(), now(), now() + interval '5 minutes'
+          );
+          SQL
+
+            response_file="$(mktemp)"
+            http_status="$(curl --silent --show-error --max-time 30 \
+              --output "$response_file" --write-out '%{http_code}' \
+              --request POST http://127.0.0.1:8080/api/v1/notifications/test \
+              --header "Authorization: Bearer $raw_token" \
+              --data-urlencode "userId=$user_id")"
+
+            cleanup_session
+            if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+              printf 'owner_%s_http_status=%s\n' "$owner_index" "$http_status"
+              rm -f "$response_file"
+              exit 1
+            fi
+
+            parsed="$(RESPONSE_FILE="$response_file" python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["RESPONSE_FILE"], encoding="utf-8") as source:
+              payload = json.load(source)
+          attempted = int(payload.get("attempted", 0))
+          accepted = int(payload.get("accepted", 0))
+          failed = attempted - accepted
+          details = ",".join(
+              f"{item.get('platform')}:{str(item.get('accepted')).lower()}:{item.get('statusCode')}:{item.get('reason')}"
+              for item in payload.get("devices", [])
+          ).replace("\t", " ").replace("\n", " ")
+          print(f"{attempted}\t{accepted}\t{failed}\t{details}")
+          PY
+          )"
+            rm -f "$response_file"
+            IFS=$'\t' read -r attempted accepted failed details <<<"$parsed"
+            total_attempted=$((total_attempted + attempted))
+            total_accepted=$((total_accepted + accepted))
+            total_failed=$((total_failed + failed))
+            printf 'owner_%s_attempted=%s accepted=%s failed=%s devices=%s\n' \
+              "$owner_index" "$attempted" "$accepted" "$failed" "$details"
+          done < <(sudo -u postgres psql --dbname=morrow --tuples-only --no-align \
+            --command='SELECT DISTINCT user_id FROM push_devices WHERE active = true ORDER BY user_id;')
+
+          printf 'test_push_attempted=%s\n' "$total_attempted"
+          printf 'test_push_accepted=%s\n' "$total_accepted"
+          printf 'test_push_failed=%s\n' "$total_failed"
+          if [ "$total_accepted" -eq 0 ] || [ "$total_failed" -ne 0 ]; then
+            exit 1
+          fi
+          REMOTE
