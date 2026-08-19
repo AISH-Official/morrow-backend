@@ -57,12 +57,6 @@ public class UserContextCollector {
         return collect(userId, includeHealthData);
     }
 
-    /**
-     * Context for the proactive notification judge. That flow is triggered by
-     * health snapshots and only runs for users with AI health consent, so health
-     * data is included based on consent alone, independent of the server-wide
-     * include-health-data flag that governs the chat assistant.
-     */
     public UserContext collectProactiveContext(String userId) {
         return collect(userId, true);
     }
