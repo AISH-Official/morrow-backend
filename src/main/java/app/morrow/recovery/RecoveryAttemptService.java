@@ -19,7 +19,15 @@ public class RecoveryAttemptService {
     }
 
     public RecoveryAttempt suggest(String userId, RecoveryAttempt.Action action, String trigger, String reason, String confidence, RecoveryAttempt.Source source) {
-        return attempts.save(new RecoveryAttempt(normalize(userId), action, trigger, reason, confidence, source));
+        return recordDeliveredSuggestion(prepareSuggestion(userId, action, trigger, reason, confidence, source));
+    }
+
+    public RecoveryAttempt prepareSuggestion(String userId, RecoveryAttempt.Action action, String trigger, String reason, String confidence, RecoveryAttempt.Source source) {
+        return new RecoveryAttempt(normalize(userId), action, trigger, reason, confidence, source);
+    }
+
+    public RecoveryAttempt recordDeliveredSuggestion(RecoveryAttempt value) {
+        return attempts.save(value);
     }
 
     public RecoveryAttempt createAndStart(String userId, RecoveryAttempt.Action action, String trigger, String reason, String confidence, RecoveryAttempt.Source source) {

@@ -42,8 +42,11 @@ class HealthPushListenerTest {
         checkIns = mock(CheckInRepository.class);
         assistant = mock(AssistantService.class);
         accounts = mock(AccountAuthService.class);
-        listener = new HealthPushListener(notifications, recoveryScores, healthSnapshots, checkIns, assistant, accounts, "Asia/Seoul", 20);
-        snapshot = new HealthSignalSnapshot("user-a", "snapshot-a", HealthSignalSnapshot.Source.WATCH, 300, 92.0, 81.0, 28.0, 1200.0, 80.0, 5.0, 500.0, 1.0, 18.0, 97.0, OffsetDateTime.now());
+        listener = new HealthPushListener(notifications, recoveryScores, healthSnapshots, checkIns,
+                assistant, accounts, "Asia/Seoul", 20, 50, 24);
+        snapshot = new HealthSignalSnapshot("user-a", "snapshot-a", HealthSignalSnapshot.Source.WATCH,
+                300, 92.0, 81.0, 28.0, 1200.0, 80.0, 5.0, 500.0, 1.0, 18.0, 97.0,
+                OffsetDateTime.now());
         when(healthSnapshots.findTop12ByUserIdOrderByRecordedAtDesc("user-a")).thenReturn(List.of(snapshot));
         when(checkIns.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(anyString(), any())).thenReturn(List.of());
         when(notifications.canSendRecoveryAlert("user-a")).thenReturn(true);
@@ -52,70 +55,84 @@ class HealthPushListenerTest {
     }
 
     @Test
-    void sendsWhenConsentedAiDecidesNotificationIsUseful() {
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(55, "MODERATE", true, "HIGH", List.of("수면이 최근 기준보다 짧아요.")));
+    void sendsAiCopyWhenConsentedAiDecidesNotificationIsUseful() {
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                55, "MODERATE", true, "HIGH", List.of("수면이 최근 기준보다 짧아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(
+                true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.");
+        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.",
+                "지금 1분 호흡해요", "짧게 호흡해 보세요.");
     }
 
     @Test
     void evaluatesWithAiAtLightLoadAndSendsWhenAiDecidesSo() {
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(75, "NORMAL", true, "MEDIUM", List.of("걸음이 같은 시간대보다 적어요.")));
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                75, "NORMAL", true, "MEDIUM", List.of("걸음이 같은 시간대보다 적어요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(true, "지금 잠깐 걸어볼까요?", "잠깐 걸어보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(
+                true, "지금 잠깐 걸어볼까요?", "잠깐 걸어보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications).sendAiRecoveryAlert(snapshot, 25, "걸음이 같은 시간대보다 적어요.");
+        verify(notifications).sendAiRecoveryAlert(snapshot, 25, "걸음이 같은 시간대보다 적어요.",
+                "지금 잠깐 걸어볼까요?", "잠깐 걸어보세요.");
     }
 
     @Test
-    void aiAlertIgnoresRuleCooldownAndReceivesLastAlertTime() {
-        var lastAlertAt = OffsetDateTime.now().minusMinutes(90);
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(55, "MODERATE", true, "HIGH", List.of("수면이 최근 기준보다 짧아요.")));
+    void aiAlertUsesLastAlertTimeInsteadOfFixedRuleCooldown() {
+        var lastAlertAt = OffsetDateTime.now().minusMinutes(40);
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                55, "MODERATE", true, "HIGH", List.of("수면이 최근 기준보다 짧아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
         when(notifications.canSendRecoveryAlert("user-a")).thenReturn(false);
         when(notifications.lastRecoveryAlertAt("user-a")).thenReturn(Optional.of(lastAlertAt));
-        when(assistant.generateProactiveInsight("user-a", lastAlertAt)).thenReturn(new AssistantService.ProactiveInsight(true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
+        when(assistant.generateProactiveInsight("user-a", lastAlertAt)).thenReturn(new AssistantService.ProactiveInsight(
+                true, "지금 1분 호흡해요", "짧게 호흡해 보세요.", OpenAIClient.Mode.LIVE, "RECENT_WELLNESS_CONTEXT"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.");
+        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.",
+                "지금 1분 호흡해요", "짧게 호흡해 보세요.");
     }
 
     @Test
     void skipsEvaluationBelowConfiguredMinimumLoad() {
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(90, "NORMAL", true, "HIGH", List.of()));
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                90, "NORMAL", true, "HIGH", List.of()));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
         verify(assistant, never()).generateProactiveInsight(anyString(), any());
-        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString());
+        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString(), anyString(), anyString());
         verify(notifications, never()).sendActionableRecoveryAlert(any(), anyInt(), anyString(), anyString());
     }
 
     @Test
     void respectsAiSkipDecisionInMidLoadBand() {
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(60, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                60, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(
+                false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString());
+        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString(), anyString(), anyString());
         verify(notifications, never()).sendActionableRecoveryAlert(any(), anyInt(), anyString(), anyString());
     }
 
     @Test
     void fallsBackToRuleAlertWhenAiSkipsAtHighLoad() {
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(45, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                45, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
-        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
+        when(assistant.generateProactiveInsight(eq("user-a"), any())).thenReturn(new AssistantService.ProactiveInsight(
+                false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
@@ -124,7 +141,8 @@ class HealthPushListenerTest {
 
     @Test
     void usesSafeRuleFallbackWithoutAiHealthConsent() {
-        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(40, "HIGHER_THAN_USUAL", true, "MEDIUM", List.of("안정 심박이 최근 기준보다 높아요.")));
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(
+                40, "HIGHER_THAN_USUAL", true, "MEDIUM", List.of("안정 심박이 최근 기준보다 높아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(false);
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
