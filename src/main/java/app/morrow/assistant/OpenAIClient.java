@@ -18,8 +18,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
@@ -30,9 +32,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class OpenAIClient {
     private static final Logger log = LoggerFactory.getLogger(OpenAIClient.class);
     private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
-    private static final Duration CHAT_TIMEOUT = Duration.ofSeconds(28);
-    private static final Duration SHORT_TIMEOUT = Duration.ofSeconds(10);
-    private static final Duration FALLBACK_TIMEOUT = Duration.ofSeconds(18);
+    private static final Duration SHORT_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration FALLBACK_TIMEOUT = Duration.ofSeconds(30);
     private static final Set<String> NON_RETRYABLE_429_CODES = Set.of(
             "billing_hard_limit_reached",
             "credit_balance_exhausted",
@@ -46,12 +47,19 @@ public class OpenAIClient {
     private final String chatModel;
     private final String shortModel;
     private final String fallbackModel;
+    private final String chatReasoningEffort;
+    private final int chatMaxOutputTokens;
+    private final Duration chatTimeout;
+    private final boolean webSearchEnabled;
     private final boolean enabled;
     private final ResponsesGateway gateway;
     private final Sleeper sleeper;
     private final AtomicLong successfulRequests = new AtomicLong();
     private final AtomicLong failedRequests = new AtomicLong();
     private final AtomicLong retriedRequests = new AtomicLong();
+    private final AtomicLong inputTokens = new AtomicLong();
+    private final AtomicLong cachedInputTokens = new AtomicLong();
+    private final AtomicLong outputTokens = new AtomicLong();
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
     private volatile Instant lastSuccessAt;
     private volatile Instant lastFailureAt;
@@ -65,6 +73,10 @@ public class OpenAIClient {
             @Value("${openai.chat-model:gpt-5.6-sol}") String chatModel,
             @Value("${openai.short-model:gpt-5.6-terra}") String shortModel,
             @Value("${openai.fallback-model:gpt-5.6-luna}") String fallbackModel,
+            @Value("${openai.chat-reasoning-effort:high}") String chatReasoningEffort,
+            @Value("${openai.chat-max-output-tokens:4000}") int chatMaxOutputTokens,
+            @Value("${openai.chat-timeout-seconds:75}") int chatTimeoutSeconds,
+            @Value("${openai.web-search-enabled:true}") boolean webSearchEnabled,
             @Value("${openai.enabled:false}") boolean enabled,
             ObjectMapper objectMapper
     ) {
@@ -73,6 +85,10 @@ public class OpenAIClient {
                 chatModel,
                 shortModel,
                 fallbackModel,
+                chatReasoningEffort,
+                chatMaxOutputTokens,
+                Duration.ofSeconds(chatTimeoutSeconds),
+                webSearchEnabled,
                 enabled,
                 new HttpResponsesGateway(apiKey, objectMapper),
                 duration -> Thread.sleep(duration.toMillis())
@@ -88,20 +104,55 @@ public class OpenAIClient {
             ResponsesGateway gateway,
             Sleeper sleeper
     ) {
+        this(
+                apiKey,
+                chatModel,
+                shortModel,
+                fallbackModel,
+                "high",
+                4_000,
+                Duration.ofSeconds(75),
+                true,
+                enabled,
+                gateway,
+                sleeper
+        );
+    }
+
+    OpenAIClient(
+            String apiKey,
+            String chatModel,
+            String shortModel,
+            String fallbackModel,
+            String chatReasoningEffort,
+            int chatMaxOutputTokens,
+            Duration chatTimeout,
+            boolean webSearchEnabled,
+            boolean enabled,
+            ResponsesGateway gateway,
+            Sleeper sleeper
+    ) {
         this.apiKey = apiKey;
         this.chatModel = chatModel;
         this.shortModel = shortModel;
         this.fallbackModel = fallbackModel;
+        this.chatReasoningEffort = chatReasoningEffort;
+        this.chatMaxOutputTokens = chatMaxOutputTokens;
+        this.chatTimeout = chatTimeout;
+        this.webSearchEnabled = webSearchEnabled;
         this.enabled = enabled;
         this.gateway = gateway;
         this.sleeper = sleeper;
         log.info(
-                "OpenAI assistant configured: enabled={}, keyConfigured={}, chatModel={}, shortModel={}, fallbackModel={}, api=responses",
+                "OpenAI assistant configured: enabled={}, keyConfigured={}, chatModel={}, shortModel={}, fallbackModel={}, reasoning={}, maxOutputTokens={}, webSearch={}, api=responses",
                 enabled,
                 keyConfigured(),
                 chatModel,
                 shortModel,
-                fallbackModel
+                fallbackModel,
+                chatReasoningEffort,
+                chatMaxOutputTokens,
+                webSearchEnabled
         );
     }
 
@@ -111,11 +162,22 @@ public class OpenAIClient {
             String userContextPrompt,
             String userMessage
     ) {
+        return generateResponse(userId, systemPrompt, userContextPrompt, List.of(), userMessage);
+    }
+
+    public GenerationResult generateResponse(
+            String userId,
+            String systemPrompt,
+            String userContextPrompt,
+            List<ConversationTurn> conversation,
+            String userMessage
+    ) {
         return generate(
-                new Route(chatModel, "low", "medium", 1_200, CHAT_TIMEOUT),
+                new Route(chatModel, chatReasoningEffort, "high", chatMaxOutputTokens, chatTimeout, webSearchEnabled),
                 userId,
                 systemPrompt,
                 userContextPrompt,
+                conversation,
                 userMessage
         );
     }
@@ -127,10 +189,11 @@ public class OpenAIClient {
             String userMessage
     ) {
         return generate(
-                new Route(shortModel, "none", "low", 320, SHORT_TIMEOUT),
+                new Route(shortModel, "low", "low", 500, SHORT_TIMEOUT, false),
                 userId,
                 systemPrompt,
                 userContextPrompt,
+                List.of(),
                 userMessage
         );
     }
@@ -140,6 +203,7 @@ public class OpenAIClient {
             String userId,
             String systemPrompt,
             String userContextPrompt,
+            List<ConversationTurn> conversation,
             String userMessage
     ) {
         if (!ready()) {
@@ -152,7 +216,7 @@ public class OpenAIClient {
         var startedAt = System.nanoTime();
 
         try {
-            return execute(primary, safetyIdentifier, instructions, userMessage, startedAt, 1);
+            return execute(primary, safetyIdentifier, instructions, conversationInput(conversation, userMessage), startedAt, 1);
         } catch (Exception primaryError) {
             if (!isRetryable(primaryError) || fallbackModel == null || fallbackModel.isBlank()) {
                 return fail(primaryError, primary.model(), 1, startedAt);
@@ -176,9 +240,16 @@ public class OpenAIClient {
                 return fail(interrupted, primary.model(), 1, startedAt);
             }
 
-            var fallback = new Route(fallbackModel, "none", "low", primary.maxOutputTokens(), FALLBACK_TIMEOUT);
+            var fallback = new Route(
+                    fallbackModel,
+                    "low",
+                    primary.verbosity(),
+                    primary.maxOutputTokens(),
+                    FALLBACK_TIMEOUT,
+                    primary.webSearchEnabled()
+            );
             try {
-                return execute(fallback, safetyIdentifier, instructions, userMessage, startedAt, 2);
+                return execute(fallback, safetyIdentifier, instructions, conversationInput(conversation, userMessage), startedAt, 2);
             } catch (Exception fallbackError) {
                 return fail(fallbackError, fallbackModel, 2, startedAt);
             }
@@ -189,7 +260,7 @@ public class OpenAIClient {
             Route route,
             String safetyIdentifier,
             String instructions,
-            String input,
+            Object input,
             long startedAt,
             int attempt
     ) throws IOException, InterruptedException {
@@ -201,7 +272,8 @@ public class OpenAIClient {
                         route.maxOutputTokens(),
                         route.reasoningEffort(),
                         route.verbosity(),
-                        safetyIdentifier
+                        safetyIdentifier,
+                        route.webSearchEnabled()
                 ),
                 route.timeout()
         );
@@ -210,6 +282,9 @@ public class OpenAIClient {
             throw new EmptyOpenAIResponseException();
         }
         recordSuccess(response.model() == null || response.model().isBlank() ? route.model() : response.model());
+        inputTokens.addAndGet(response.inputTokens());
+        cachedInputTokens.addAndGet(response.cachedInputTokens());
+        outputTokens.addAndGet(response.outputTokens());
         log.debug(
                 "OpenAI request succeeded. model={}, attempt={}, elapsedMs={}",
                 lastSuccessfulModel,
@@ -302,6 +377,27 @@ public class OpenAIClient {
         }
     }
 
+    static List<Map<String, String>> conversationInput(List<ConversationTurn> conversation, String userMessage) {
+        var input = new ArrayList<Map<String, String>>();
+        if (conversation != null) {
+            conversation.stream()
+                    .filter(turn -> turn != null && turn.content() != null && !turn.content().isBlank())
+                    .forEach(turn -> input.add(Map.of("role", turn.role(), "content", turn.content())));
+        }
+        input.add(Map.of("role", "user", "content", userMessage));
+        return input;
+    }
+
+    static boolean supportsReasoningControls(String model) {
+        if (model == null) return false;
+        var normalized = model.toLowerCase();
+        return normalized.startsWith("gpt-5") || normalized.matches("o[1-9].*");
+    }
+
+    static boolean supportsTextVerbosity(String model) {
+        return model != null && model.toLowerCase().startsWith("gpt-5");
+    }
+
     static String normalizeContent(String content) {
         if (content == null) return null;
         var normalized = content.strip();
@@ -345,7 +441,13 @@ public class OpenAIClient {
                 lastFailureAt,
                 lastFailureType,
                 lastFailureStatus,
-                lastSuccessfulModel
+                lastSuccessfulModel,
+                chatReasoningEffort,
+                chatMaxOutputTokens,
+                webSearchEnabled,
+                inputTokens.get(),
+                cachedInputTokens.get(),
+                outputTokens.get()
         );
     }
 
@@ -388,22 +490,48 @@ public class OpenAIClient {
             Instant lastFailureAt,
             String lastFailureType,
             Integer lastFailureStatus,
-            String lastSuccessfulModel
+            String lastSuccessfulModel,
+            String reasoningEffort,
+            int maxOutputTokens,
+            boolean webSearchEnabled,
+            long inputTokens,
+            long cachedInputTokens,
+            long outputTokens
     ) {}
 
-    record Route(String model, String reasoningEffort, String verbosity, int maxOutputTokens, Duration timeout) {}
+    public record ConversationTurn(String role, String content) {
+        public ConversationTurn {
+            if (!"user".equals(role) && !"assistant".equals(role)) {
+                throw new IllegalArgumentException("Conversation role must be user or assistant");
+            }
+        }
+    }
+
+    record Route(
+            String model,
+            String reasoningEffort,
+            String verbosity,
+            int maxOutputTokens,
+            Duration timeout,
+            boolean webSearchEnabled
+    ) {}
 
     record ResponseRequest(
             String model,
             String instructions,
-            String input,
+            Object input,
             int maxOutputTokens,
             String reasoningEffort,
             String verbosity,
-            String safetyIdentifier
+            String safetyIdentifier,
+            boolean webSearchEnabled
     ) {}
 
-    record ResponseResult(String content, String model) {}
+    record ResponseResult(String content, String model, long inputTokens, long cachedInputTokens, long outputTokens) {
+        ResponseResult(String content, String model) {
+            this(content, model, 0, 0, 0);
+        }
+    }
 
     @FunctionalInterface
     interface ResponsesGateway {
@@ -453,11 +581,22 @@ public class OpenAIClient {
             payload.put("max_output_tokens", request.maxOutputTokens());
             payload.put("store", false);
             payload.put("safety_identifier", request.safetyIdentifier());
-            payload.put("reasoning", Map.of(
-                    "effort", request.reasoningEffort(),
-                    "context", "current_turn"
-            ));
-            payload.put("text", Map.of("verbosity", request.verbosity()));
+            if (supportsReasoningControls(request.model())) {
+                payload.put("reasoning", Map.of(
+                        "effort", request.reasoningEffort(),
+                        "context", "current_turn"
+                ));
+            }
+            if (supportsTextVerbosity(request.model())) {
+                payload.put("text", Map.of("verbosity", request.verbosity()));
+            }
+            if (request.webSearchEnabled()) {
+                payload.put("tools", List.of(Map.of(
+                        "type", "web_search",
+                        "search_context_size", "medium"
+                )));
+                payload.put("tool_choice", "auto");
+            }
 
             var httpRequest = HttpRequest.newBuilder(RESPONSES_URI)
                     .timeout(timeout)
@@ -473,7 +612,14 @@ public class OpenAIClient {
                 if (code == null) code = textOrNull(error.path("type"));
                 throw new OpenAIResponseException(response.statusCode(), code);
             }
-            return new ResponseResult(extractOutputText(root), textOrNull(root.path("model")));
+            var usage = root.path("usage");
+            return new ResponseResult(
+                    extractOutputText(root),
+                    textOrNull(root.path("model")),
+                    usage.path("input_tokens").asLong(0),
+                    usage.path("input_tokens_details").path("cached_tokens").asLong(0),
+                    usage.path("output_tokens").asLong(0)
+            );
         }
 
         static String extractOutputText(JsonNode root) {

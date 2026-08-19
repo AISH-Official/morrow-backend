@@ -17,16 +17,22 @@ class PromptBuilderTest {
         var builder = new PromptBuilder("Asia/Seoul");
         var clock = Clock.fixed(Instant.parse("2026-08-10T02:30:00Z"), ZoneOffset.UTC);
 
-        var prompt = builder.buildSystemPrompt(clock);
+        var emptyContext = new UserContextCollector.UserContext(
+                "time-user", List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        var systemPrompt = builder.buildSystemPrompt();
+        var contextPrompt = builder.buildUserContextPrompt(emptyContext, clock, false);
 
-        assertThat(prompt)
+        assertThat(contextPrompt)
                 .contains("2026년 8월 10일 월요일 11:30 (Asia/Seoul)")
                 .contains("오늘 날짜: 2026-08-10")
-                .contains("상대적인 날짜")
+                .contains("오늘, 어제, 내일, 요일");
+        assertThat(systemPrompt)
                 .contains("일반 지식, 학습, 업무, 기술, 일상 질문")
                 .contains("최우선 출력 형식 규칙")
                 .contains("큰따옴표 U+0022와 곡선형 큰따옴표 U+201C, U+201D는 어떤 경우에도 출력하지 않습니다")
-                .contains("큰따옴표 없이 자연스러운 간접 표현으로 바꿔 씁니다");
+                .contains("큰따옴표 없이 자연스러운 간접 표현으로 바꿔 씁니다")
+                .contains("웹 검색어에는 사용자 식별자");
     }
 
     @Test
@@ -97,6 +103,23 @@ class PromptBuilderTest {
                 .contains("AI: 발표 전에 짧게 호흡해 보세요");
         assertThat(prompt.indexOf("사용자: 내일 발표가 있어서 긴장돼"))
                 .isLessThan(prompt.indexOf("AI: 발표 전에 짧게 호흡해 보세요"));
+    }
+
+    @Test
+    void buildsRolePreservingConversationTurnsInChronologicalOrder() {
+        var builder = new PromptBuilder("Asia/Seoul");
+        var earlier = new AssistantMessage("chat-user", AssistantMessage.Role.USER, "어제 피곤했어", true);
+        var latest = new AssistantMessage("chat-user", AssistantMessage.Role.ASSISTANT, "수면 기록을 같이 볼게요", true);
+        var context = new UserContextCollector.UserContext(
+                "chat-user", List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(latest, earlier), List.of()
+        );
+
+        assertThat(builder.buildConversationTurns(context))
+                .containsExactly(
+                        new OpenAIClient.ConversationTurn("user", "어제 피곤했어"),
+                        new OpenAIClient.ConversationTurn("assistant", "수면 기록을 같이 볼게요")
+                );
     }
 
     @Test

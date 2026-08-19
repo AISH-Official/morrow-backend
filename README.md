@@ -263,9 +263,14 @@ mvn spring-boot:run
 | `SWAGGER_ENABLED` | `true` | Swagger UI와 OpenAPI 문서 활성화 |
 | `OPENAI_ENABLED` | `false` | OpenAI 실시간 응답 활성화 |
 | `OPENAI_API_KEY` | 빈 값 | OpenAI API 키 |
+| `OPENAI_MODEL` | `gpt-5.6-sol` | 채팅 모델의 간편 설정 키 (`OPENAI_CHAT_MODEL`이 있으면 그 값을 우선) |
 | `OPENAI_CHAT_MODEL` | `gpt-5.6-sol` | 사용자 채팅 모델 |
 | `OPENAI_SHORT_MODEL` | `gpt-5.6-terra` | 추천·Watch 알림 모델 |
 | `OPENAI_FALLBACK_MODEL` | `gpt-5.6-luna` | 일시 장애·TPM 제한 시 대체 모델 |
+| `OPENAI_REASONING_EFFORT` | `high` | 사용자 채팅 추론 강도 |
+| `OPENAI_MAX_OUTPUT_TOKENS` | `4000` | 사용자 채팅 최대 출력 토큰 |
+| `OPENAI_TIMEOUT_SECONDS` | `75` | 웹 검색을 포함한 채팅 요청 제한 시간 |
+| `OPENAI_WEB_SEARCH_ENABLED` | `true` | 최신 정보 질문에서 Responses API 웹 검색 허용 |
 | `MORROW_TIME_ZONE` | `Asia/Seoul` | 날짜·시간 질문과 상대 날짜 계산의 기준 시간대 |
 | `MORROW_AI_INCLUDE_HEALTH_DATA` | `false` | 명시적 동의 후 Watch/iPhone 건강 데이터를 AI 컨텍스트에 포함 |
 | `MORROW_DEMO_LOGIN_ENABLED` | `false` | 단일 해커톤 데모 로그인 활성화 |
@@ -310,7 +315,7 @@ mvn spring-boot:run
 4. `current.jar` 심볼릭 링크를 새 릴리스로 교체하고 `morrow-api` 재시작
 5. `/actuator/health`가 `UP`인지 확인하고, 실패하면 직전 릴리스로 롤백
 
-저장소 Actions secrets에는 `EC2_HOST`, `EC2_SSH_KEY_B64`, `EC2_KNOWN_HOSTS`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, `OPENAI_SHORT_MODEL`, `OPENAI_FALLBACK_MODEL`, `OPENAI_ENABLED`가 필요합니다. OpenAI 설정은 배포할 때 EC2의 `/etc/morrow-openai.env`로 동기화되고, 데이터베이스 비밀번호는 EC2의 `/etc/morrow.env`에만 보관하며 GitHub에는 복사하지 않습니다.
+저장소 Actions secrets에는 `EC2_HOST`, `EC2_SSH_KEY_B64`, `EC2_KNOWN_HOSTS`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_ENABLED`가 필요합니다. `OPENAI_CHAT_MODEL`, `OPENAI_SHORT_MODEL`, `OPENAI_FALLBACK_MODEL`은 세부 모델을 따로 제어할 때만 선택적으로 추가합니다. OpenAI 설정은 배포할 때 EC2의 `/etc/morrow-openai.env`로 동기화되고, 데이터베이스 비밀번호는 EC2의 `/etc/morrow.env`에만 보관하며 GitHub에는 복사하지 않습니다.
 
 ## 테스트와 CI
 

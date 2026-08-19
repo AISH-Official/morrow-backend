@@ -98,7 +98,7 @@ class OpenAIClientTest {
     }
 
     @Test
-    void shortResponsesUseTerraWithLowLatencySettingsAndAnonymousSafetyId() {
+    void shortResponsesUseTerraWithBoundedReasoningAndAnonymousSafetyId() {
         var requests = new ArrayList<OpenAIClient.ResponseRequest>();
         var timeouts = new ArrayList<Duration>();
         OpenAIClient.ResponsesGateway gateway = (request, timeout) -> {
@@ -113,13 +113,50 @@ class OpenAIClientTest {
         assertThat(result.mode()).isEqualTo(OpenAIClient.Mode.LIVE);
         assertThat(requests).singleElement().satisfies(request -> {
             assertThat(request.model()).isEqualTo("gpt-5.6-terra");
-            assertThat(request.reasoningEffort()).isEqualTo("none");
+            assertThat(request.reasoningEffort()).isEqualTo("low");
             assertThat(request.verbosity()).isEqualTo("low");
-            assertThat(request.maxOutputTokens()).isEqualTo(320);
+            assertThat(request.maxOutputTokens()).isEqualTo(500);
+            assertThat(request.webSearchEnabled()).isFalse();
             assertThat(request.safetyIdentifier()).startsWith("morrow-");
             assertThat(request.safetyIdentifier()).doesNotContain("person@example.com");
         });
-        assertThat(timeouts).containsExactly(Duration.ofSeconds(10));
+        assertThat(timeouts).containsExactly(Duration.ofSeconds(20));
+    }
+
+    @Test
+    void chatUsesHighReasoningLargeOutputBudgetWebSearchAndRolePreservingHistory() {
+        var requests = new ArrayList<OpenAIClient.ResponseRequest>();
+        OpenAIClient.ResponsesGateway gateway = (request, timeout) -> {
+            requests.add(request);
+            return new OpenAIClient.ResponseResult("이전 대화를 이어서 답했어요.", request.model(), 900, 400, 120);
+        };
+        var client = client(gateway, ignored -> {});
+
+        client.generateResponse(
+                "user-1",
+                "system",
+                "context",
+                java.util.List.of(
+                        new OpenAIClient.ConversationTurn("user", "어제 잠을 못 잤어"),
+                        new OpenAIClient.ConversationTurn("assistant", "오늘은 무리하지 말아요")
+                ),
+                "그러면 지금 뭘 할까?"
+        );
+
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.reasoningEffort()).isEqualTo("high");
+            assertThat(request.verbosity()).isEqualTo("high");
+            assertThat(request.maxOutputTokens()).isEqualTo(4_000);
+            assertThat(request.webSearchEnabled()).isTrue();
+            assertThat(request.input()).isEqualTo(java.util.List.of(
+                    java.util.Map.of("role", "user", "content", "어제 잠을 못 잤어"),
+                    java.util.Map.of("role", "assistant", "content", "오늘은 무리하지 말아요"),
+                    java.util.Map.of("role", "user", "content", "그러면 지금 뭘 할까?")
+            ));
+        });
+        assertThat(client.status().inputTokens()).isEqualTo(900);
+        assertThat(client.status().cachedInputTokens()).isEqualTo(400);
+        assertThat(client.status().outputTokens()).isEqualTo(120);
     }
 
     @Test
@@ -129,6 +166,15 @@ class OpenAIClientTest {
 
         assertThat(first).isEqualTo(second).startsWith("morrow-");
         assertThat(first).doesNotContain("private-user-id");
+    }
+
+    @Test
+    void onlySendsModelSpecificControlsToCompatibleModels() {
+        assertThat(OpenAIClient.supportsReasoningControls("gpt-5.6-sol")).isTrue();
+        assertThat(OpenAIClient.supportsReasoningControls("o3-mini")).isTrue();
+        assertThat(OpenAIClient.supportsReasoningControls("gpt-4o-mini")).isFalse();
+        assertThat(OpenAIClient.supportsTextVerbosity("gpt-5.6-sol")).isTrue();
+        assertThat(OpenAIClient.supportsTextVerbosity("gpt-4o-mini")).isFalse();
     }
 
     @Test

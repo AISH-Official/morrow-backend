@@ -22,9 +22,13 @@ server:
 openai:
   api:
     key: ${OPENAI_API_KEY:}
-  chat-model: ${OPENAI_CHAT_MODEL:gpt-5.6-sol}
+  chat-model: ${OPENAI_CHAT_MODEL:${OPENAI_MODEL:gpt-5.6-sol}}
   short-model: ${OPENAI_SHORT_MODEL:gpt-5.6-terra}
   fallback-model: ${OPENAI_FALLBACK_MODEL:gpt-5.6-luna}
+  chat-reasoning-effort: ${OPENAI_REASONING_EFFORT:high}
+  chat-max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:4000}
+  chat-timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:75}
+  web-search-enabled: ${OPENAI_WEB_SEARCH_ENABLED:true}
   enabled: ${OPENAI_ENABLED:false}
 springdoc:
   api-docs:
@@ -47,7 +51,6 @@ morrow:
   push:
     check-in-reminders-enabled: ${MORROW_CHECK_IN_REMINDERS_ENABLED:true}
     check-in-cron: "${MORROW_CHECK_IN_CRON:0 0 9,14,19 * * *}"
-    ai-evaluation-min-load: ${MORROW_AI_EVALUATION_MIN_LOAD:20}
     recovery-evaluation-enabled: ${MORROW_RECOVERY_EVALUATION_ENABLED:true}
     recovery-evaluation-cron: "${MORROW_RECOVERY_EVALUATION_CRON:0 */30 8-21 * * *}"
     recovery-cooldown-minutes: ${MORROW_RECOVERY_COOLDOWN_MINUTES:90}
