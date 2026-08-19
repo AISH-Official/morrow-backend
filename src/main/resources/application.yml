@@ -46,7 +46,13 @@ morrow:
     required: ${MORROW_AUTH_REQUIRED:false}
   push:
     check-in-reminders-enabled: ${MORROW_CHECK_IN_REMINDERS_ENABLED:true}
-    check-in-cron: "${MORROW_CHECK_IN_CRON:0 0 * * * *}"
+    check-in-cron: "${MORROW_CHECK_IN_CRON:0 0 9,14,19 * * *}"
+    recovery-evaluation-enabled: ${MORROW_RECOVERY_EVALUATION_ENABLED:true}
+    recovery-evaluation-cron: "${MORROW_RECOVERY_EVALUATION_CRON:0 */30 8-21 * * *}"
+    recovery-cooldown-minutes: ${MORROW_RECOVERY_COOLDOWN_MINUTES:90}
+    recommendation-cooldown-minutes: ${MORROW_RECOMMENDATION_COOLDOWN_MINUTES:30}
+    high-load-fallback-threshold: ${MORROW_HIGH_LOAD_FALLBACK_THRESHOLD:50}
+    max-health-snapshot-age-hours: ${MORROW_MAX_HEALTH_SNAPSHOT_AGE_HOURS:24}
     apns:
       enabled: ${APNS_ENABLED:false}
       team-id: ${APNS_TEAM_ID:}

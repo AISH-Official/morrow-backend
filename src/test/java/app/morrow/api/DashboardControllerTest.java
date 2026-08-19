@@ -213,7 +213,7 @@ class DashboardControllerTest {
    .andExpect(jsonPath("$.recommendation").exists());
   mvc.perform(get("/api/v1/reports/weekly").header("Authorization","Bearer "+token))
    .andExpect(status().isOk())
-   .andExpect(jsonPath("$.suggestedRecoveryCount").value(5))
+   .andExpect(jsonPath("$.suggestedRecoveryCount").value(4))
    .andExpect(jsonPath("$.completedRecoveryCount").value(4))
    .andExpect(jsonPath("$.recoveryHelpfulRate").value(75.0))
    .andExpect(jsonPath("$.topHelpfulAction").value("1분 호흡"));

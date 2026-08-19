@@ -22,14 +22,29 @@ public class HealthPushListener {
     private final AssistantService assistant;
     private final AccountAuthService accounts;
     private final java.time.ZoneId timeZone;
-    public HealthPushListener(PushNotificationService notifications, RecoveryScoreCalculator recoveryScores, HealthSignalSnapshotRepository healthSnapshots, CheckInRepository checkIns, AssistantService assistant, AccountAuthService accounts, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone) {
+    private final int highLoadFallbackThreshold;
+    private final java.time.Duration maxSnapshotAge;
+    public HealthPushListener(PushNotificationService notifications, RecoveryScoreCalculator recoveryScores, HealthSignalSnapshotRepository healthSnapshots, CheckInRepository checkIns, AssistantService assistant, AccountAuthService accounts, @Value("${morrow.time-zone:Asia/Seoul}") String timeZone, @Value("${morrow.push.high-load-fallback-threshold:50}") int highLoadFallbackThreshold, @Value("${morrow.push.max-health-snapshot-age-hours:24}") long maxSnapshotAgeHours) {
         this.notifications = notifications; this.recoveryScores = recoveryScores; this.healthSnapshots = healthSnapshots; this.checkIns = checkIns; this.assistant = assistant; this.accounts = accounts; this.timeZone = java.time.ZoneId.of(timeZone);
+        this.highLoadFallbackThreshold = Math.max(35, highLoadFallbackThreshold);
+        this.maxSnapshotAge = java.time.Duration.ofHours(Math.max(1, maxSnapshotAgeHours));
     }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onSnapshot(HealthSignalSnapshotService.HealthSnapshotCreatedEvent event) {
-        var snapshot = event.snapshot();
+        evaluate(event.snapshot());
+    }
+
+    @Async
+    public void evaluateLatest(String userId) {
+        healthSnapshots.findFirstByUserIdOrderByRecordedAtDesc(userId)
+                .filter(snapshot -> snapshot.getRecordedAt() != null)
+                .filter(snapshot -> snapshot.getRecordedAt().isAfter(java.time.OffsetDateTime.now().minus(maxSnapshotAge)))
+                .ifPresent(this::evaluate);
+    }
+
+    void evaluate(app.morrow.health.HealthSignalSnapshot snapshot) {
         var history = healthSnapshots.findTop12ByUserIdOrderByRecordedAtDesc(snapshot.getUserId()).stream().filter(value -> !value.getId().equals(snapshot.getId())).toList();
         var start = java.time.LocalDate.now(timeZone).atStartOfDay(timeZone).toOffsetDateTime();
         var today = checkIns.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(snapshot.getUserId(), start);
@@ -41,12 +56,16 @@ public class HealthPushListener {
         if (accounts.aiHealthConsent(snapshot.getUserId())) {
             var insight = assistant.generateProactiveInsight(snapshot.getUserId());
             if (insight.mode() == OpenAIClient.Mode.LIVE) {
-                if (insight.shouldNotify()) notifications.sendActionableRecoveryAlert(snapshot, load, reason, "AI");
+                if (insight.shouldNotify()) {
+                    notifications.sendAiRecoveryAlert(snapshot, load, reason, insight.title(), insight.body());
+                } else if (load >= highLoadFallbackThreshold) {
+                    notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
+                }
                 return;
             }
         }
 
-        if (load >= 55) notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
+        if (load >= highLoadFallbackThreshold) notifications.sendActionableRecoveryAlert(snapshot, load, reason, assessment.confidence());
     }
 
 }

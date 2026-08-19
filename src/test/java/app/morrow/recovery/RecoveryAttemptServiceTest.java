@@ -8,6 +8,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,21 @@ class RecoveryAttemptServiceTest {
     private final RecoveryAttemptRepository repository = mock(RecoveryAttemptRepository.class);
     private final PersonalizationService personalization = mock(PersonalizationService.class);
     private final RecoveryAttemptService service = new RecoveryAttemptService(repository, personalization);
+
+    @Test
+    void preparesNotificationSuggestionWithoutWritingItBeforeDelivery() {
+        var value = service.prepareSuggestion(
+                "user-1",
+                RecoveryAttempt.Action.BREATH,
+                "AI_TENSION_PATTERN",
+                "긴장 신호가 감지됐어요.",
+                "AI",
+                RecoveryAttempt.Source.NOTIFICATION
+        );
+
+        assertThat(value.getStatus()).isEqualTo(RecoveryAttempt.Status.SUGGESTED);
+        verify(repository, never()).save(any(RecoveryAttempt.class));
+    }
 
     @Test
     void createsAndStartsAnActionableRecoveryAttempt() {

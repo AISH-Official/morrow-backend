@@ -40,7 +40,7 @@ class HealthPushListenerTest {
         checkIns = mock(CheckInRepository.class);
         assistant = mock(AssistantService.class);
         accounts = mock(AccountAuthService.class);
-        listener = new HealthPushListener(notifications, recoveryScores, healthSnapshots, checkIns, assistant, accounts, "Asia/Seoul");
+        listener = new HealthPushListener(notifications, recoveryScores, healthSnapshots, checkIns, assistant, accounts, "Asia/Seoul", 50, 24);
         snapshot = new HealthSignalSnapshot("user-a", "snapshot-a", HealthSignalSnapshot.Source.WATCH, 300, 92.0, 81.0, 28.0, 1200.0, 80.0, 5.0, 500.0, 1.0, 18.0, 97.0, OffsetDateTime.now());
         when(healthSnapshots.findTop12ByUserIdOrderByRecordedAtDesc("user-a")).thenReturn(List.of(snapshot));
         when(checkIns.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(anyString(), any())).thenReturn(List.of());
@@ -55,18 +55,30 @@ class HealthPushListenerTest {
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
-        verify(notifications).sendActionableRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.", "AI");
+        verify(notifications).sendAiRecoveryAlert(snapshot, 45, "수면이 최근 기준보다 짧아요.", "지금 1분 호흡해요", "짧게 호흡해 보세요.");
     }
 
     @Test
-    void respectsAiSkipDecision() {
+    void highLoadStillUsesSafeFallbackWhenAiSkips() {
         when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(45, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
         when(accounts.aiHealthConsent("user-a")).thenReturn(true);
         when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
 
         listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
 
+        verify(notifications).sendActionableRecoveryAlert(snapshot, 55, "HRV가 최근 기준보다 낮아요.", "HIGH");
+    }
+
+    @Test
+    void moderateLoadRespectsAiSkipDecision() {
+        when(recoveryScores.calculate(any(), any(), any())).thenReturn(new RecoveryScoreCalculator.Assessment(55, "MODERATE", true, "HIGH", List.of("HRV가 최근 기준보다 낮아요.")));
+        when(accounts.aiHealthConsent("user-a")).thenReturn(true);
+        when(assistant.generateProactiveInsight("user-a")).thenReturn(new AssistantService.ProactiveInsight(false, "", "", OpenAIClient.Mode.LIVE, "AI_SKIPPED"));
+
+        listener.onSnapshot(new HealthSignalSnapshotService.HealthSnapshotCreatedEvent(snapshot));
+
         verify(notifications, never()).sendActionableRecoveryAlert(any(), anyInt(), anyString(), anyString());
+        verify(notifications, never()).sendAiRecoveryAlert(any(), anyInt(), anyString(), anyString(), anyString());
     }
 
     @Test
