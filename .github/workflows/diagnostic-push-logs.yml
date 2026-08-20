@@ -1,0 +1,62 @@
+name: Diagnostic push listener logs
+
+# Temporary diagnostic workflow: dumps redacted morrow-api logs around the
+# health-snapshot push listener to debug missing AI recovery alerts.
+# Delete this file (and close the PR) once the investigation is done.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/diagnostic-push-logs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  logs:
+    name: Dump redacted listener logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s' "$SSH_KEY_B64" | base64 --decode > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Dump filtered application logs
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh ec2-user@"$EC2_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          redact() {
+            sed -E \
+              -e 's/sk-[A-Za-z0-9_-]+/[REDACTED_KEY]/g' \
+              -e 's/(user|account)-[0-9a-fA-F-]{8,}/[USER]/g' \
+              -e 's/hackathon-[a-z-]+/[USER]/g'
+          }
+
+          echo "=== service ==="
+          sudo systemctl is-active morrow-api
+          sudo systemctl show morrow-api --property=ActiveEnterTimestamp
+
+          echo "=== push/AI flow logs (last 3 hours) ==="
+          sudo journalctl -u morrow-api --since '3 hours ago' --no-pager \
+            | grep -E 'OpenAI assistant configured|Proactive insight|recovery alert|Sending AI|AI skipped|AI unavailable|suppressed|HealthPushListener' \
+            | redact | tail -n 200 || true
+
+          echo "=== warnings, errors, and stack traces (last 3 hours) ==="
+          sudo journalctl -u morrow-api --since '3 hours ago' --no-pager \
+            | grep -E -A 15 'ERROR|WARN|Exception|Caused by' \
+            | redact | tail -n 300 || true
+
+          echo "=== raw tail (last 120 lines) ==="
+          sudo journalctl -u morrow-api -n 120 --no-pager | redact || true
+          REMOTE
